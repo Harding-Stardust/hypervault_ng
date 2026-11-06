@@ -15,7 +15,8 @@ opened with the verified copy.
 
 ### Signing key
 
-Every release is signed with this Ed25519 key:
+Every version of `Hypervault_next_gen.html` in this repository is signed with this Ed25519 key. The signature is
+committed next to it as `Hypervault_next_gen.html.sig`.
 
 ```
 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICvtErANjUZmrTKBrwmOEvRDEGB1gtQhIOK8e8cFkeKf hypervault NG release key
@@ -24,15 +25,21 @@ ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICvtErANjUZmrTKBrwmOEvRDEGB1gtQhIOK8e8cFkeKf
 Fingerprint: `SHA256:/B7LQH3dL9DYM7/q6fMtDiRVWqLUqEIcSbGMjmwbL8E`
 
 If the key were only taken from this repository, a signature would not protect against a hijacked GitHub account.
-Save the line above locally the first time and reuse it for later releases.
+Save the line above locally the first time and reuse it for later versions.
 
 ### Verify the signature (Windows, Linux and macOS)
 
 Needs only OpenSSH 8.1 or newer, which is built into Windows 10/11, macOS 10.15+ and current Linux distributions.
 Check the version with `ssh -V`.
 
-1. Download `Hypervault_next_gen.html` and `Hypervault_next_gen.html.sig` from the
-   [release](https://github.com/Harding-Stardust/hypervault_ng) into the same folder.
+1. Download `Hypervault_next_gen.html` and `Hypervault_next_gen.html.sig` into the same folder, with `git clone` or
+   with curl (in Windows PowerShell, type `curl.exe` instead of `curl`):
+
+   ```sh
+   curl -fsSLO https://raw.githubusercontent.com/Harding-Stardust/hypervault_ng/master/Hypervault_next_gen.html
+   curl -fsSLO https://raw.githubusercontent.com/Harding-Stardust/hypervault_ng/master/Hypervault_next_gen.html.sig
+   ```
+
 2. Open a terminal in that folder and create the file `hvng_allowed_signers` with the key line:
 
    Linux, macOS and Windows **cmd**:
@@ -64,14 +71,16 @@ Check the version with `ssh -V`.
 A genuine file prints `Good "file" signature for harding with ED25519 key SHA256:...` and the command exits with
 code 0. A modified file prints `Signature verification failed` and exits with code 255.
 
-### For the maintainer: signing a release
+### For the maintainer: signing a new version
 
 ```sh
-
 ssh-keygen -t ed25519 -C "hypervault NG release key" -f hvng_signing_key    # Once. Use a strong passphrase
-ssh-keygen -Y sign -f hvng_signing_key -n file Hypervault_next_gen.html     # Creates Hypervault_next_gen.html.sig
-ssh-keygen -lf hvng_signing_key.pub                                         # Shows the fingerprint to publish
+ssh-keygen -lf hvng_signing_key.pub                                         # Once. Shows the fingerprint to publish
+
+ssh-keygen -Y sign -f hvng_signing_key -n file Hypervault_next_gen.html     # After the last change, creates Hypervault_next_gen.html.sig
+git add Hypervault_next_gen.html Hypervault_next_gen.html.sig               # Always commit the file and its signature together
 ```
 
-Upload `Hypervault_next_gen.html` and `Hypervault_next_gen.html.sig`. The repository's `.gitattributes`
-keeps the HTML file byte for byte (no line ending conversion), so the signature also matches a `git clone` on Windows.
+`ssh-keygen -Y sign` asks before it overwrites an old `.sig`. Run the verify command above before every commit.
+The repository's `.gitattributes` keeps the HTML file byte for byte (no line ending conversion), so the signature
+also matches a `git clone` on Windows.
