@@ -1,81 +1,77 @@
-Hypervault
-==========
+# Hypervault Next Gen
 
-Live App: <https://hypervault.github.io/>
+One self-contained HTML file that locks files and text into a password protected vault. The vault is itself an HTML
+file that opens in any modern browser, fully offline. Based on [Hypervault](https://github.com/hypervault/hypervault.github.io)
+by Caleb Madrigal.
 
-The source is in the `src` directory, and the deployment artifacts are in the root directory (as required by Github Pages).
+## Verify your copy
 
-## What is Hypervault?
+Keep one verified copy of `Hypervault_next_gen.html` on a computer you trust and open vaults (for example from a USB
+stick) with its tab **Open vault file**. The vault file is then only read as data and its code never runs, so a
+modified vault cannot steal your password. Verify that trusted copy once, as described below.
 
-* Hypervault is client-side file encryption web app.
-* Hypervault is entirely contained in a single, static `.html` file.
-    - As such, you can save the Hypervault page, and you will have a complete working copy of Hypervault which you can run offline.
-    - Hypervault has no server-side components.
-* Hypervault outputs another single `.html` file which contains both the encrypted file data, and a copy of itself.
+Locked vaults cannot be verified this way: every vault contains its own encrypted data. That is why vaults should be
+opened with the verified copy.
 
-## Supported browsers
+### Signing key
 
-* It seems to work in most modern desktop browsers
-* iOS support is coming soon
-* Android is not yet tested
+Every release is signed with this Ed25519 key:
 
-## Development stuff
+```
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICvtErANjUZmrTKBrwmOEvRDEGB1gtQhIOK8e8cFkeKf hypervault NG release key
+```
 
-### How to build:
+Fingerprint: `SHA256:/B7LQH3dL9DYM7/q6fMtDiRVWqLUqEIcSbGMjmwbL8E`
 
-    cd src
-    npm install
-    npm install -g grunt-cli
-    bower install
-    grunt build
+If the key were only taken from this repository, a signature would not protect against a hijacked GitHub account.
+Save the line above locally the first time and reuse it for later releases.
 
-### How to serve production version:
+### Verify the signature (Windows, Linux and macOS)
 
-    ./serve-dist.sh
+Needs only OpenSSH 8.1 or newer, which is built into Windows 10/11, macOS 10.15+ and current Linux distributions.
+Check the version with `ssh -V`.
 
-Then `localhost:8000` in browser.
+1. Download `Hypervault_next_gen.html` and `Hypervault_next_gen.html.sig` from the
+   [release](https://github.com/Harding-Stardust/hypervault_ng) into the same folder.
+2. Open a terminal in that folder and create the file `hvng_allowed_signers` with the key line:
 
-### How to run development server:
+   Linux, macOS and Windows **cmd**:
 
-    grunt serve
+   ```sh
+   echo harding ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICvtErANjUZmrTKBrwmOEvRDEGB1gtQhIOK8e8cFkeKf hypervault NG release key > hvng_allowed_signers
+   ```
 
-## How it works
+   Windows **PowerShell** (`>` writes UTF-16 there, which ssh-keygen rejects with "invalid line"):
 
-* Hypervault uses the `HTML5 File API` to read file data into the browser client-side.
-* It then stores all the filenames, file types, file sizes, and file data (as `base64`) in a `JSON` object.
-* The user enters a Vault password and clicks `Lock vault`; Hypervault builds a locked vault like this:
-    - Hypervault serializes the `JSON` blob containing all the file data, and encryptes it using the [triplesec](https://github.com/keybase/triplesec) encryption library. The output of this is a single string.
-    - Hypervault then grabs it's own source code (without making any web requests), and treats it as a template with which it interpolates the encrypted file data by replacing the `REPLACE_WITH_ENCRYPTED_DATA_`.
-    - Hypervault also sets a variable in the new vault to indicate that this is a locked vault: `_decryptionMode = true;`.
-    - Hypervault then initiates a download of the new `locked_vault.html`.
+   ```powershell
+   Set-Content -Encoding ascii hvng_allowed_signers "harding ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICvtErANjUZmrTKBrwmOEvRDEGB1gtQhIOK8e8cFkeKf hypervault NG release key"
+   ```
 
-## What's awesome about Hypervault?
+3. Verify the signature.
 
-* Secure
-    - Hypervault uses the Triplesec library, which uses 3 strong encryption algorithms ([AES](https://en.wikipedia.org/wiki/Advanced_Encryption_Standard), [Salsa20](https://en.wikipedia.org/wiki/Salsa20), and [Blowfish](https://en.wikipedia.org/wiki/Blowfish_(cipher))), so you can rest assured that your data is safe, even if a couple of the ciphers are compromised.
-    - Since Hypervault runs in a browser (which is sandboxed), you never have to worry that it doing anything nefarious on your computer.
-    - Zero-knowledge: Hypervault encryption is all client-side, so even if Hypervault's servers are compromised, your data is still safe.
-* Easy
-    - No installations necessary, just run in the browser.
-* Offline
-    - Since Hypervault is a self-contained `.html` file, you save it to your desktop and run it offline.
-* Always usable
-    - Since Hypervault packages itself with your encrypted data (in the form of a `locked_vault.html` file, you can always decrypt your data, even if Hypervault goes away.
+   Linux, macOS and Windows **cmd**:
 
-## Roadmap
+   ```sh
+   ssh-keygen -Y verify -f hvng_allowed_signers -I harding -n file -s Hypervault_next_gen.html.sig < Hypervault_next_gen.html
+   ```
 
-- [x] Image file previews
-- [x] Multiple file support
-- [ ] Add more help to app (to make it more self-explanatory).
-- [ ] Add "Download Hypervault Offline" button.
-- [ ] iOS Support
-- [ ] Android Support
-- [ ] Text file preview
-- [ ] Add "inline" texts, so users can create a hypervault with text without ever having to put that text in a file.
-- [ ] Add some animations to clarify a few things.
-- [ ] More unit tests.
-- [ ] Clean up redundant CSS.
-- [ ] Improve code style.
-- [ ] Remove `FileSaver.js` dependency?
-- [ ] Add compression (lzma?) to encrypted data?
+   Windows **PowerShell** (`<` does not work there, so run the command through cmd):
 
+   ```powershell
+   cmd /c "ssh-keygen -Y verify -f hvng_allowed_signers -I harding -n file -s Hypervault_next_gen.html.sig < Hypervault_next_gen.html"
+   ```
+
+A genuine file prints `Good "file" signature for harding with ED25519 key SHA256:...` and the command exits with
+code 0. A modified file prints `Signature verification failed` and exits with code 255.
+
+### For the maintainer: signing a release
+
+```sh
+
+ssh-keygen -t ed25519 -C "hypervault NG release key" -f hvng_signing_key    # Once. Use a strong passphrase
+ssh-keygen -Y sign -f hvng_signing_key -n file Hypervault_next_gen.html     # Creates Hypervault_next_gen.html.sig
+ssh-keygen -lf hvng_signing_key.pub                                         # Shows the fingerprint to publish
+```
+
+Upload `Hypervault_next_gen.html` and `Hypervault_next_gen.html.sig`. The repository's `.gitattributes`
+keeps the HTML file byte for byte (no line ending conversion), so the signature also matches a `git clone` on Windows.

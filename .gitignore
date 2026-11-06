@@ -1,7 +1,11 @@
-node_modules
-dist
-.tmp
-bower_components
-test/app
-test/bower_components_app/
+# Private signing keys must never be committed. The .pub file and *.sig files are public and may be committed.
+hvng_signing_key
+*_signing_key
+!*.pub
+
+# Files created when following the verification steps in README.md
+hvng_allowed_signers
+
+# Editor settings
 .idea
+.vscode

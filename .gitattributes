@@ -1,1 +1,5 @@
-* text=auto
+# Store and check out these files byte for byte (no CRLF/LF conversion), otherwise the
+# SHA-256 hash and the signature in the release no longer match the file on disk.
+*.html  -text
+*.sig   -text
+allowed_signers -text

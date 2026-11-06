@@ -1,0 +1,2558 @@
+<!DOCTYPE html>
+<html lang="en" translate="no">
+<head>
+<!--
+    Hypervault Next Gen
+
+    One self-contained HTML file that locks files and text into a password protected "vault".
+    The vault is itself an HTML file: open it in a browser, type the password and the files are decrypted locally.
+    Nothing is ever sent over the network (enforced by the Content-Security-Policy below). No third-party code.
+
+    Cryptography:
+      1. A random 256-bit data key is generated with crypto.getRandomValues() (the operating system CSPRNG).
+      2. All files are packed together, optionally gzip compressed, and encrypted with AES-256-GCM using the data key.
+      3. A key-encryption key is derived from the password with scrypt (memory-hard, random 32-byte salt).
+      4. The data key is encrypted (wrapped) with the key-encryption key using AES-256-GCM.
+      5. The vault header (format version, scrypt parameters, salt, IVs) is authenticated as AAD by both GCM operations,
+         so any change to the header or to the data is detected.
+      AES-GCM, PBKDF2 (used inside scrypt) and the random generator come from the browser's built-in WebCrypto.
+      The memory-hard part of scrypt (RFC 7914) is implemented in the script block with id="hv-crypto-core".
+
+    Trusted copy:
+      Keep one copy of this file on a computer you trust and use the tab "Open vault file" to unlock vaults stored on
+      e.g. a USB stick. The vault file is then only read as data, its code never runs, so a modified vault cannot steal
+      your password.
+
+    Settings:
+      The defaults are in the script block with id="hv-settings" right below (search for G_DEFAULT_SETTINGS).
+      Every vault created from this file carries a copy of this file, including those defaults.
+
+    Note for editing this file:
+      Every top-level element inside <head> and <body> must have the attribute data-hv, otherwise it is not copied
+      into the vaults (this filters out elements that browser extensions inject into the page).
+
+    Version:     2026-11-06 19:58:45
+    Author:      Harding ( https://github.com/Harding-Stardust/hypervault_ng )
+    Based on:    Hypervault by Caleb Madrigal ( https://github.com/hypervault/hypervault.github.io )
+-->
+<meta charset="utf-8" data-hv>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'" data-hv>
+<meta name="referrer" content="no-referrer" data-hv>
+<meta name="google" content="notranslate" data-hv>
+<meta name="viewport" content="width=device-width, initial-scale=1" data-hv>
+<title data-hv>Hypervault NG</title>
+<link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAMAAADVRocKAAAABGdBTUEAALGPC/xhBQAAAAFzUkdCAK7OHOkAAAAgY0hSTQAAeiYAAICEAAD6AAAAgOgAAHUwAADqYAAAOpgAABdwnLpRPAAAAutQTFRF/4UbAAAA/4Qb/z81/0Mw/0E0/0A0/zBI/zxH/0A1/0E2/0I1/0E1/0E4/0Y3/0A2/z8r/1NG/wAA/zw3/0I2/0I4/y4t/z4v/x4W/0o4/0I5/0Ul/z80/0M4/z0z/ygs/0Y5/z8z/z4x/0dA/zYk/zwx/2FP/7f//zsx/0c6/zAd/z01/0Q5/0I3/zww/0Q3/4Ub/4Ub/4Ub/4Ub/4Ub/4Ub/4Ub/4Ub/4Ub/4Ub/4Ub/4Ub/4Ub/4Ub/4Ub/4Qb/4Ub/4Ub/z81/0A2/0A2/0A2/0E1/0E1/0A2/0E2/0A2/0A0/0A1/0E2/0E2/0E2/0E2/0E2/0E2/0E2/0E2/0E2/0E1/0A1/0E1/0E2/0E2/0E2/0E2/0E2/0A2/0A1/0E2/0E2/0E2/0E2/0E2/0E2/0E2/0E2/0E2/0A0/0A2/0E2/0E2/0E2/z8z/0E2/0E2/0E2/0A1/0A1/0E2/0E2/0E2/0E2/0E2/0A2/0E2/0E2/0A2/0E2/0E2/0E2/0E2/0E2/0E1/0E2/0E2/0A2/0E2/0E2/0E1/0E2/0E2/0E2/0E2/0A2/0A1/0E2/0E2/0E2/0E2/0E2/0A1/0A2/0E2/0E2/0E2/0E2/0E2/0A1/0Az/0E2/0E2/0E2/0E2/0E1/0E2/0A2/0E2/0E2/0E1/0A0/0E2/0E2/0E2/0A1/0E2/zs0/0E2/0E2/0E1/0E2/0A2/0E2/0A1/0E2/0E2/zow/0E2/0E2/0E2/0A1/0A1/0E2/0A1/0A2/0E2/0E2/z80/0E2/0E2/0E1/0A1/0E2/0E2/0E2/0E2/0E2/0E1/0E2/0E2/z80/0E2/0E2/0A1/0E2/0A2/0A1/0E2/0A2/0E2/0A0/0E2/0E2/0A1/0A1/0E2/0E2/0E2/zYp/0A1/0E2/0E2/0E2/0E2/0A1/0E2/0E2/4Ub/4Ub/4Ub/4Qb/4Qb/4Qb/4Ua/4Ub/4Ub/4Ub/4Ub/4Ub/4Ub/0E2////dko3QgAAAPZ0Uk5TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA7MvJyNj7+XcVExIxzPNMC7ALBBc1TlhTPyEJBzmIxebz9/Xs1KFVEyKK4v3ysUIEN7384GUINcppBB235EsEf/u+Gy3Y+Gp0uRINOCNd/ng77YHneSTVXw6zOXe8EzDb+W2Dwh4fUDrO7m8FAT3jbAklpVFu3SoFl/RTEoQCKQ5K8ShxBpuAARTAsA0s305MdXwHn6wLFcQv4e9JUnqoCKPRFsdFMlUIfgmnQRk25fbLAT+M2dfSAhUdTbGTODU0VNno5u/++QiaHAAAAAFiS0dE+DtjZ2YAAAAJcEhZcwAAFiUAABYlAUlSJPAAAALRSURBVGje7ddXWxNBFAbgREx0xtVYwBoL9t7BLlYsqAECiARUUEGxIYJYQUQRFEVBEEERUOwNey/Ye++9967MrVx4sdmdx4v4xceL/X7AeTM7OefsqgqsHJUCKIAC/FOgeYuWqLRq7SAHHNu0bYdK+w4d5UCnzio1KkWculgXUHVVAAVQgP8UsOnWvUdP5169+/QtqrECoHXp13+AwdXN3ejh6TWwmAYMaIp7D/Ixsd/x9Rs8hEABWmKofwATZdjwERQICCUDg5h5jCNHERxAg0czacaMLaVDAWTc+BAZwCaEUhBQWpgYJq/PwieVIRiAlI0I4ABs8hSKAehUP159ZphGy2GA6R5cwG2GLcEAgQYuEBllBwJmRnMBNstOAJ0ghn+C2agTzInlAuFzQXcgxMVzgZh5oH8RKT+f2wcJC0B9UIEuTOTUX7S4IqiTC2dREucIyUtQs6jwmlMS5H2cWgk2TdVC5aVpkvrL0jOA+0AtLF+RbBLXz1yZhdxohTu5SnaOSPBZlYHdyWq1vupq0UXnrvnT77cIIGvXiZ7Q+g20GhjQbfQX38GmzTowQLfkioH4rRQLVKfb8sRA4nYwYFNjh1kzu6ZSeygg7Nxlvgt27yFQgO7dZ97J+w8IWODgIXMgLBsK2NPDvuZA3hFaEwiQWkclA9t0rLYWCeQfl47rEycpEjh1WgrEeiMBeuasFDh3ntaBAXp6wVUKmKLqEhhA6l00SQF2KQu3k8nlK/KlfzUFCFy7Lgeib9D6KIDezJQDARENUO9FWnrLXQ6wnNugNzs1aXgnkgOkBcOAu/c49ZnxPm0EAh4E8YCQ9MZaDEAfPuIBzNMF831g38T5MRd4EooB9E+TuPWZ8RltigBI/vMXL3l55WWrhwCv37zlJ64ZBLAgCqAACqAAFgPvgIDTezng8OHjJ1Q+f/kqBwocv32H5cdPDmCdKIAC/H1+AeDO3mKh2s6mAAAAJXRFWHRkYXRlOmNyZWF0ZQAyMDE1LTA3LTE1VDIzOjE1OjM4KzAwOjAwQFLAcgAAACV0RVh0ZGF0ZTptb2RpZnkAMjAxNS0wNy0xNVQyMzoxNTozOCswMDowMDEPeM4AAABGdEVYdHNvZnR3YXJlAEltYWdlTWFnaWNrIDYuNy44LTkgMjAxNC0wNS0xMiBRMTYgaHR0cDovL3d3dy5pbWFnZW1hZ2ljay5vcmfchu0AAAAAGHRFWHRUaHVtYjo6RG9jdW1lbnQ6OlBhZ2VzADGn/7svAAAAGHRFWHRUaHVtYjo6SW1hZ2U6OmhlaWdodAAxOTIPAHKFAAAAF3RFWHRUaHVtYjo6SW1hZ2U6OldpZHRoADE5MtOsIQgAAAAZdEVYdFRodW1iOjpNaW1ldHlwZQBpbWFnZS9wbmc/slZOAAAAF3RFWHRUaHVtYjo6TVRpbWUAMTQzNzAwMjEzOOnsF8UAAAAPdEVYdFRodW1iOjpTaXplADBCQpSiPuwAAABWdEVYdFRodW1iOjpVUkkAZmlsZTovLy9tbnRsb2cvZmF2aWNvbnMvMjAxNS0wNy0xNS9mNGYwOGI5YTBhMzI1ZTBlMTkwYzE3NDMzZmVlNDRkNy5pY28ucG5nCz2uhAAAAABJRU5ErkJggg==" data-hv>
+
+<script id="hv-settings" data-hv>
+"use strict";
+// =====================================================================================================================
+// DEFAULT SETTINGS
+// Edit the values below in any text editor to change the defaults permanently.
+// The Settings tab in the app can override them, but only for the current browser tab.
+// If a value is missing or invalid, the app shows a warning and uses its built-in value for that setting.
+// =====================================================================================================================
+const G_DEFAULT_SETTINGS = Object.freeze({
+    scryptLog2N: 17,                                // Password hardening: scrypt N = 2^17. Each +1 doubles the time and RAM to unlock, and the cost of guessing passwords. Allowed 14..20
+    scryptR: 8,                                     // scrypt block size r. RAM needed = 128 * r * N bytes (128 MiB with the defaults, max 1 GiB). Allowed 1..32
+    scryptP: 1,                                     // scrypt parallelism p. Unlock time grows linearly with p, RAM does not. Allowed 1..16
+    compress: true,                                 // gzip the files before encryption. Smaller vaults for text and documents, no gain for jpg, zip or mp4
+    minPasswordLength: 12,                          // Shortest password (in characters) accepted when a vault is locked. Allowed 1..256
+    vaultFileName: "locked_hypervault_{date}.html", // File name of a new vault. {date} becomes the local date and time, e.g. 2026-11-06_083205
+    autoLockMinutes: 15,                            // Lock an unlocked vault again after this many minutes without mouse or keyboard activity. 0 = never
+    textPreviewMaxMB: 5,                            // Text files larger than this (MB) can only be downloaded, not previewed. 0 = no text preview
+    warnTotalSizeMB: 200,                           // Ask before locking more than this many MB (big vaults are slow to open and need a lot of RAM). 0 = never ask
+});
+</script>
+
+<style data-hv>
+/* ---- Color theme. Edit these variables to change the look. The dark block below is used when Windows is set to dark mode. ---- */
+:root{
+  color-scheme:light dark;
+  --bg:#f1f5f9;                 /* page background */
+  --surface:#ffffff;            /* cards, inputs, dialogs */
+  --surface-2:#f8fafc;          /* subtle panels: file rows, dropzone */
+  --border:#e2e8f0;             /* normal borders */
+  --border-strong:#cbd5e1;      /* input borders, dashed dropzone */
+  --text:#0f172a;               /* main text */
+  --muted:#64748b;              /* help text, meta data */
+  --accent:#4f46e5;             /* buttons, active tab, links */
+  --accent-2:#9333ea;           /* second color of the title gradient */
+  --accent-hover:#4338ca;
+  --accent-soft:#eef2ff;        /* hover background, drag hover, focus ring */
+  --accent-text:#ffffff;        /* text on filled accent buttons */
+  --danger:#dc2626;--danger-soft:#fef2f2;--danger-text:#b91c1c;
+  --success:#16a34a;--success-soft:#f0fdf4;--success-text:#15803d;
+  --info:#0284c7;--info-soft:#f0f9ff;--info-text:#0369a1;
+  --code-bg:#f1f5f9;
+  --shadow:0 1px 2px rgba(15,23,42,.04),0 8px 24px rgba(15,23,42,.06);
+  --radius:12px;--radius-sm:8px;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#0b1120;--surface:#111827;--surface-2:#0f172a;--border:#1f2937;--border-strong:#334155;
+    --text:#e2e8f0;--muted:#94a3b8;
+    --accent:#818cf8;--accent-2:#c084fc;--accent-hover:#a5b4fc;--accent-soft:rgba(129,140,248,.14);--accent-text:#0b1120;
+    --danger:#f87171;--danger-soft:rgba(248,113,113,.10);--danger-text:#fca5a5;
+    --success:#4ade80;--success-soft:rgba(74,222,128,.10);--success-text:#86efac;
+    --info:#38bdf8;--info-soft:rgba(56,189,248,.10);--info-text:#7dd3fc;
+    --code-bg:#1e293b;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.35);
+  }
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;font:15px/1.5 "Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,Roboto,"Helvetica Neue",Arial,sans-serif;color:var(--text);background:var(--bg)}
+.outer{padding:40px 20px}
+.container{max-width:880px;margin:0 auto;padding:4px 32px 32px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow)}
+.header{display:flex;flex-wrap:wrap;align-items:center;gap:0 24px}
+.title{font-size:2.2em;font-weight:700;letter-spacing:-.02em;margin:24px 0 4px;color:var(--accent);background:linear-gradient(90deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.intro-text{color:var(--muted);flex:1 1 300px;margin:8px 0}
+.banner{white-space:pre-line;background:var(--danger-soft);color:var(--danger-text);border:1px solid var(--danger);border-radius:var(--radius-sm);padding:10px 12px;margin:10px 0}
+.tabs{display:flex;flex-wrap:wrap;gap:4px;border-bottom:1px solid var(--border);margin:16px 0 24px}
+.tab{background:none;border:none;border-bottom:2px solid transparent;margin-bottom:-1px;padding:10px 14px;font:inherit;font-weight:500;color:var(--muted);cursor:pointer}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.section-title{font-weight:600;font-size:1.05em;margin:0 0 10px}
+.btn{border-radius:var(--radius-sm);color:var(--text);background:var(--surface);border:1px solid var(--border-strong);font:inherit;font-weight:500;padding:8px 16px;cursor:pointer;transition:background .15s,border-color .15s,color .15s}
+.btn:hover:not(:disabled){border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn-accent,.btn-primary{background:var(--accent);border-color:var(--accent);color:var(--accent-text)}
+.btn-accent:hover:not(:disabled),.btn-primary:hover:not(:disabled){background:var(--accent-hover);border-color:var(--accent-hover);color:var(--accent-text)}
+.btn-primary{font-size:1.15em;font-weight:600;padding:12px 16px;width:100%}
+.btn-small{font-size:.9em;padding:5px 12px}
+.link-button{background:none;border:none;padding:0;color:var(--accent);cursor:pointer;font:inherit}
+.link-button:hover:not(:disabled){text-decoration:underline}
+.link-button:disabled{opacity:.45;cursor:not-allowed}
+:is(.btn,.tab,.link-button,.close-x,summary):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.grid{display:grid;grid-template-columns:1fr 280px;gap:28px}
+.dropzone{border:2px dashed var(--border-strong);border-radius:var(--radius);background:var(--surface-2);padding:20px;text-align:center;transition:border-color .15s,background .15s}
+.dropzone.hover{border-color:var(--accent);background:var(--accent-soft)}
+.dropzone .btn{margin:4px}
+.drop-msg{font-size:1.3em;font-weight:500}
+.or-msg{color:var(--muted);margin:4px 0 8px}
+input[type=password],input[type=text],input[type=number],textarea{border:1px solid var(--border-strong);border-radius:var(--radius-sm);padding:9px 11px;font:inherit;width:100%;background:var(--surface);color:var(--text);transition:border-color .15s,box-shadow .15s}
+input[type=password]:focus,input[type=text]:focus,input[type=number]:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+input[type=checkbox]{accent-color:var(--accent)}
+input[type=number]{max-width:160px}
+textarea{resize:vertical}
+.field{margin-bottom:12px}
+.field>label{display:block;font-weight:500;margin-bottom:4px}
+.checkbox-label{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:.9em;cursor:pointer;margin-bottom:12px}
+.setting-bool{color:var(--text);font-size:1em;font-weight:500;margin-bottom:4px}
+.help-text{color:var(--muted);font-size:.9em}
+.validation-error{color:var(--danger-text);font-size:.9em;margin-top:3px}
+.file-list{margin-top:12px;display:flex;flex-direction:column;gap:6px}
+.file-row{display:flex;align-items:center;gap:12px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;transition:border-color .15s}
+.file-row:hover{border-color:var(--border-strong)}
+.file-thumb{width:52px;height:46px;flex:0 0 52px;display:flex;align-items:center;justify-content:center}
+.file-thumb img{max-width:52px;max-height:46px;border-radius:4px}
+.file-thumb.clickable{cursor:pointer}
+.file-info{flex:1 1 auto;min-width:0}
+.file-name{font-weight:500;word-break:break-all}
+.file-meta{color:var(--muted);font-size:.85em;margin-top:2px}
+.file-actions{display:flex;gap:6px;flex:0 0 auto}
+.summary{color:var(--muted);margin-top:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+.summary-buttons{display:flex;gap:6px}
+.status{margin-top:12px;padding:10px 12px;border-radius:var(--radius-sm);white-space:pre-line;border:1px solid var(--border)}
+.status-error{background:var(--danger-soft);color:var(--danger-text);border-color:var(--danger)}
+.status-ok{background:var(--success-soft);color:var(--success-text);border-color:var(--success)}
+.status-info{background:var(--info-soft);color:var(--info-text);border-color:var(--info)}
+.progress-box{margin-top:12px;color:var(--muted);font-size:.9em}
+.progress-box progress{width:100%;height:8px;accent-color:var(--accent)}
+.unlock-form{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:16px}
+.unlock-form input[type=password],.unlock-form input[type=text]{flex:1 1 220px;width:auto}
+.unlock-form .checkbox-label{flex-basis:100%;margin:0}
+.button-row{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+.settings-code{min-height:240px;font-family:"Cascadia Mono",Consolas,"Courier New",monospace;font-size:.85em;margin:8px 0}
+details summary{cursor:pointer;color:var(--accent);font-weight:500;margin-top:16px}
+code{background:var(--code-bg);padding:1px 5px;border-radius:4px;font-family:"Cascadia Mono",Consolas,monospace;font-size:.9em}
+dialog{background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 20px 50px rgba(0,0,0,.25);padding:20px 24px;width:min(900px,94vw);max-height:94vh}
+dialog::backdrop{background:rgba(15,23,42,.55);backdrop-filter:blur(3px)}
+.dialog-header{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px}
+.dialog-title{word-break:break-all;margin:0;font-weight:600;font-size:1.2em}
+.dialog-buttons{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-top:14px}
+.close-x{background:none;border:none;border-radius:var(--radius-sm);color:var(--muted);font-size:26px;line-height:1;cursor:pointer;padding:2px 8px}
+.close-x:hover{color:var(--text);background:var(--surface-2)}
+.viewer-body{text-align:center}
+.viewer-image{max-width:100%;max-height:70vh;border-radius:var(--radius-sm)}
+.viewer-text,#text-dialog-text{width:100%;height:60vh;font-family:"Cascadia Mono",Consolas,"Courier New",monospace;font-size:.9em}
+.footer{text-align:center;color:var(--muted);font-size:.8em;margin:0 0 40px}
+.footer a{color:var(--accent);text-decoration:none}
+.footer a:hover{text-decoration:underline}
+@media (max-width:760px){.grid{grid-template-columns:1fr}.outer{padding:12px}.container{padding:4px 16px 20px}}
+</style>
+</head>
+<body>
+<div class="outer" data-hv>
+  <div class="container">
+
+    <div class="header">
+      <h1 class="title">Hypervault NG</h1>
+      <p class="intro-text" id="intro-text">Hypervault NG locks files and text into a password protected vault: a single HTML file that opens in any modern browser, fully offline.</p>
+    </div>
+
+    <noscript><div class="banner">Hypervault needs JavaScript.</div></noscript>
+    <div class="banner" id="banner" hidden></div>
+
+    <div class="tabs" id="tabs" role="tablist">
+      <button type="button" class="tab" role="tab" data-tab="lock" id="tab-lock">Lock files</button>
+      <button type="button" class="tab" role="tab" data-tab="unlock" id="tab-unlock">Open vault file</button>
+      <button type="button" class="tab" role="tab" data-tab="settings" id="tab-settings">Settings</button>
+    </div>
+
+    <!-- ============================== Lock files ============================== -->
+    <section class="tab-panel" id="panel-lock" role="tabpanel">
+      <div class="grid">
+        <div>
+          <div class="section-title">Files to lock in the vault</div>
+          <div class="dropzone" id="lock-dropzone">
+            <div class="drop-msg">Drag files here</div>
+            <div class="or-msg">or</div>
+            <button type="button" class="btn" id="lock-browse-button" data-busy-disable>Select files</button>
+            <button type="button" class="btn" id="lock-insert-text-button" data-busy-disable>Insert text</button>
+          </div>
+          <input type="file" id="lock-file-input" multiple hidden>
+          <div class="summary" id="lock-summary-row" hidden>
+            <span id="lock-summary"></span>
+            <button type="button" class="link-button" id="lock-clear-button" data-busy-disable>Remove all</button>
+          </div>
+          <div class="file-list" id="lock-file-list"></div>
+        </div>
+
+        <div>
+          <div class="section-title">Choose a vault password</div>
+          <div class="field">
+            <input type="password" id="lock-password" placeholder="Password" autocomplete="off" spellcheck="false" aria-label="Password">
+            <div class="validation-error" id="lock-password-error" hidden></div>
+          </div>
+          <div class="field">
+            <input type="password" id="lock-password2" placeholder="Retype password" autocomplete="off" spellcheck="false" aria-label="Retype password">
+            <div class="validation-error" id="lock-password2-error" hidden></div>
+          </div>
+          <label class="checkbox-label"><input type="checkbox" id="lock-show-password"> Show password</label>
+          <div class="field">
+            <button type="button" class="btn btn-primary" id="lock-button" data-busy-disable>Lock vault</button>
+          </div>
+          <div class="help-text">The files cannot be recovered without the password.</div>
+          <div class="progress-box" id="lock-progress" hidden>
+            <div id="lock-progress-label"></div>
+            <progress id="lock-progress-bar" max="1"></progress>
+          </div>
+          <div class="status" id="lock-status" hidden></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================== Unlock ============================== -->
+    <section class="tab-panel" id="panel-unlock" role="tabpanel" hidden>
+      <div class="dropzone" id="unlock-dropzone">
+        <div class="section-title">Vault: <span id="unlock-source-label"></span></div>
+        <button type="button" class="btn btn-small" id="unlock-choose-button" data-busy-disable>Choose vault file</button>
+        <button type="button" class="btn btn-small" id="unlock-use-embedded" data-busy-disable hidden>Use this vault</button>
+        <div class="help-text">or drag a vault file here. The vault file is only read as data, its code is never run.</div>
+      </div>
+      <input type="file" id="unlock-file-input" accept=".html,.htm,text/html" hidden>
+      <div class="help-text" id="unlock-trust-tip" hidden><br>Tip: you are about to type the password into the vault file itself. If someone else could have changed this file (for example on a USB stick), open it with your own trusted copy of Hypervault instead: tab "Open vault file".</div>
+
+      <div class="unlock-form" id="unlock-form">
+        <input type="password" id="unlock-password" placeholder="Password" autocomplete="off" spellcheck="false" aria-label="Vault password">
+        <button type="button" class="btn btn-accent" id="unlock-button" data-busy-disable>Unlock vault</button>
+        <label class="checkbox-label"><input type="checkbox" id="unlock-show-password"> Show password</label>
+      </div>
+      <div class="progress-box" id="unlock-progress" hidden>
+        <div id="unlock-progress-label"></div>
+        <progress id="unlock-progress-bar" max="1"></progress>
+      </div>
+      <div class="status" id="unlock-status" hidden></div>
+
+      <div id="unlocked-view" hidden>
+        <div class="summary">
+          <span id="unlocked-summary"></span>
+          <span class="summary-buttons">
+            <button type="button" class="btn btn-small" id="unlocked-download-all">Download all</button>
+            <button type="button" class="btn btn-small" id="unlocked-lock-button">Lock</button>
+          </span>
+        </div>
+        <div class="file-list" id="unlocked-file-list"></div>
+      </div>
+    </section>
+
+    <!-- ============================== Settings ============================== -->
+    <section class="tab-panel" id="panel-settings" role="tabpanel" hidden>
+      <p class="help-text">Changes made here only apply to this browser tab. The defaults are stored in this file: open it in a text editor and edit <code>G_DEFAULT_SETTINGS</code> near the top. Every vault you create carries a copy of this file, including its defaults. The scrypt values used for a vault are stored inside the vault, so a vault always opens, whatever the settings are when you open it.</p>
+      <div id="settings-fields"></div>
+      <div class="validation-error" id="settings-memory-error" hidden></div>
+      <div class="help-text" id="settings-info"></div>
+      <div class="button-row">
+        <button type="button" class="btn btn-small" id="settings-measure-button" data-busy-disable>Measure lock/unlock time</button>
+        <button type="button" class="btn btn-small" id="settings-reset-button" data-busy-disable>Reset to the defaults in this file</button>
+      </div>
+      <div class="progress-box" id="settings-progress" hidden>
+        <div id="settings-progress-label"></div>
+        <progress id="settings-progress-bar" max="1"></progress>
+      </div>
+      <div class="status" id="settings-status" hidden></div>
+      <details>
+        <summary>Current settings as code (to paste over G_DEFAULT_SETTINGS in this file)</summary>
+        <textarea id="settings-code" class="settings-code" readonly spellcheck="false" wrap="off"></textarea>
+        <button type="button" class="btn btn-small" id="settings-copy-button">Copy</button>
+      </details>
+    </section>
+
+  </div>
+</div>
+
+<div class="footer" data-hv>
+  <a href="https://github.com/hypervault/hypervault.github.io" target="_blank" rel="noopener noreferrer">Hypervault</a> by Caleb Madrigal, <a href="https://github.com/Harding-Stardust/hypervault_ng" target="_blank" rel="noopener noreferrer">Hypervault Next Gen</a> by Harding
+  <br><span id="app-version"></span>
+</div>
+
+<!-- Modal: insert text -->
+<dialog id="text-dialog" data-hv>
+  <div class="dialog-header">
+    <h2 class="dialog-title">Insert text</h2>
+    <button type="button" class="close-x" id="text-dialog-close" aria-label="Close">&times;</button>
+  </div>
+  <div class="field">
+    <label for="text-dialog-name">File name (optional)</label>
+    <input type="text" id="text-dialog-name" placeholder="note.txt" spellcheck="false" autocomplete="off">
+  </div>
+  <div class="field">
+    <label for="text-dialog-text">Text</label>
+    <textarea id="text-dialog-text" spellcheck="false"></textarea>
+  </div>
+  <div class="validation-error" id="text-dialog-error" hidden></div>
+  <div class="dialog-buttons">
+    <button type="button" class="btn" id="text-dialog-cancel">Cancel</button>
+    <button type="button" class="btn btn-accent" id="text-dialog-insert" title="Ctrl+Enter">Insert text</button>
+  </div>
+</dialog>
+
+<!-- Modal: file viewer (images and text) -->
+<dialog id="viewer-dialog" data-hv>
+  <div class="dialog-header">
+    <div>
+      <h2 class="dialog-title" id="viewer-title"></h2>
+      <div class="file-meta" id="viewer-meta"></div>
+    </div>
+    <button type="button" class="close-x" id="viewer-close" aria-label="Close">&times;</button>
+  </div>
+  <div class="viewer-body" id="viewer-body"></div>
+  <div class="dialog-buttons">
+    <button type="button" class="btn btn-small" id="viewer-prev" title="Left arrow">&lt; Previous</button>
+    <button type="button" class="btn btn-small" id="viewer-next" title="Right arrow">Next &gt;</button>
+    <button type="button" class="btn btn-small" id="viewer-download">Download</button>
+  </div>
+</dialog>
+
+<!-- Encrypted vault data (base64). Empty in the app itself, filled in every locked vault. -->
+<script id="hv-vault-data" type="application/octet-stream" data-hv></script>
+
+<script id="hv-crypto-core" data-hv>
+"use strict";
+// =====================================================================================================================
+// Hypervault crypto core. No DOM access in this block.
+//
+// Vault binary layout (base64 encoded inside the hv-vault-data element of a vault):
+//   [0 .. 4)            magic "HVNG"
+//   [4 .. 8)            header length L, uint32 big endian
+//   [8 .. 8+L)          header, UTF-8 JSON: format version, scrypt parameters and salt, IVs, compression
+//   [8+L .. 8+L+48)     the 32-byte data key, encrypted with AES-256-GCM under the password derived key (+16 byte tag)
+//   [8+L+48 .. end)     the payload, encrypted with AES-256-GCM under the data key (+16 byte tag)
+//   Bytes [0 .. 8+L) are the additional authenticated data (AAD) of both GCM operations.
+//
+// Payload layout (before optional gzip and encryption):
+//   [0 .. 4)            manifest length M, uint32 big endian
+//   [4 .. 4+M)          manifest, UTF-8 JSON: {"app", "created", "files": [{"name", "type", "size", "lastModified"}]}
+//   [4+M .. end)        the file contents, concatenated in manifest order
+// =====================================================================================================================
+
+const G_VAULT_MAGIC = Object.freeze([0x48, 0x56, 0x4E, 0x47]);    // "HVNG"
+const G_VAULT_FORMAT_VERSION = 1;
+const G_APP_NAME = "Hypervault NG";
+const G_KEY_BYTES = 32;                                             // AES-256
+const G_SALT_BYTES = 32;
+const G_IV_BYTES = 12;                                              // 96-bit GCM nonce
+const G_GCM_TAG_BYTES = 16;
+const G_WRAPPED_KEY_BYTES = G_KEY_BYTES + G_GCM_TAG_BYTES;
+const G_MAX_HEADER_BYTES = 64 * 1024;
+const G_MAX_MANIFEST_BYTES = 64 * 1024 * 1024;
+const G_SCRYPT_MAX_MEMORY_BYTES = 1024 * 1024 * 1024;               // 1 GiB. Refuse more, also when a (hostile) vault header asks for it
+const G_SCRYPT_LIMITS = Object.freeze({ log2N: [10, 22], r: [1, 32], p: [1, 16] });
+const G_SCRYPT_YIELD_MS = 40;                                       // Let the page repaint (progress bar) this often during scrypt
+const G_BASE64_CHUNK_BYTES = 3 * 16384;                             // Multiple of 3, so base64 chunks can be concatenated
+const G_BASE64_CHUNK_CHARS = 4 * 16384;
+const G_UTF8_ENCODER = new TextEncoder();
+const G_YIELD_CHANNEL = new MessageChannel();                       // Used by yieldToEventLoop()
+/** @type {Array<() => void>} */
+const g_yield_queue = [];
+G_YIELD_CHANNEL.port1.onmessage = () => {
+    const l_resolve = g_yield_queue.shift();
+    if (l_resolve) { l_resolve(); }
+};
+
+/**
+ * Error with a machine readable code: WRONG_PASSWORD, CORRUPT, NOT_A_VAULT, LEGACY, UNSUPPORTED, LIMITS, INPUT, READ.
+ */
+class HypervaultError extends Error {
+    /**
+     * @param {string} arg_code
+     * @param {string} arg_message
+     */
+    constructor(arg_code, arg_message) {
+        super(arg_message);
+        this.name = "HypervaultError";
+        /** @type {string} */
+        this.code = arg_code;
+    }
+}
+
+// ------------------------------------------------------------------------------------------------------------ Helpers
+
+/**
+ * @param {string} arg_text
+ * @returns {Uint8Array}
+ */
+function utf8Encode(arg_text) {
+    return G_UTF8_ENCODER.encode(arg_text);
+}
+
+/**
+ * Decode UTF-8 and throw on invalid byte sequences.
+ * @param {Uint8Array} arg_bytes
+ * @returns {string}
+ */
+function utf8DecodeStrict(arg_bytes) {
+    return new TextDecoder("utf-8", { fatal: true }).decode(arg_bytes);
+}
+
+/**
+ * Cryptographically secure random bytes from the operating system (crypto.getRandomValues).
+ * @param {number} arg_length  Max 65536 (WebCrypto limit per call), we only need a few bytes at a time
+ * @returns {Uint8Array}
+ */
+function randomBytes(arg_length) {
+    const l_bytes = new Uint8Array(arg_length);
+    crypto.getRandomValues(l_bytes);
+    return l_bytes;
+}
+
+/**
+ * @param {Uint8Array[]} arg_parts
+ * @returns {Uint8Array}
+ */
+function concatBytes(arg_parts) {
+    let l_total = 0;
+    for (const l_part of arg_parts) { l_total += l_part.length; }
+    const l_out = new Uint8Array(l_total);
+    let l_pos = 0;
+    for (const l_part of arg_parts) {
+        l_out.set(l_part, l_pos);
+        l_pos += l_part.length;
+    }
+    return l_out;
+}
+
+/**
+ * @param {number} arg_value
+ * @returns {Uint8Array}
+ */
+function writeUint32BE(arg_value) {
+    const l_bytes = new Uint8Array(4);
+    new DataView(l_bytes.buffer).setUint32(0, arg_value, false);
+    return l_bytes;
+}
+
+/**
+ * @param {Uint8Array} arg_bytes
+ * @param {number} arg_offset
+ * @returns {number}
+ */
+function readUint32BE(arg_bytes, arg_offset) {
+    return new DataView(arg_bytes.buffer, arg_bytes.byteOffset, arg_bytes.byteLength).getUint32(arg_offset, false);
+}
+
+/**
+ * @param {Uint8Array} arg_bytes
+ * @returns {string}
+ */
+function bytesToBase64(arg_bytes) {
+    if (typeof (/** @type {any} */ (arg_bytes)).toBase64 === "function") { return (/** @type {any} */ (arg_bytes)).toBase64(); }   // Native in new browsers
+    const l_parts = [];
+    for (let l_pos = 0; l_pos < arg_bytes.length; l_pos += G_BASE64_CHUNK_BYTES) {
+        const l_chunk = arg_bytes.subarray(l_pos, l_pos + G_BASE64_CHUNK_BYTES);
+        l_parts.push(btoa(String.fromCharCode.apply(null, /** @type {any} */ (l_chunk))));   // Chunked so the argument list stays small
+    }
+    return l_parts.join("");
+}
+
+/**
+ * Base64 encode into lines (for embedding in the vault HTML, so the file stays usable in text editors).
+ * Returns several strings that can be passed to new Blob() without building one giant string.
+ * @param {Uint8Array} arg_bytes
+ * @param {number} arg_line_chars  Must be a multiple of 4
+ * @returns {string[]}
+ */
+function bytesToBase64Lines(arg_bytes, arg_line_chars) {
+    const l_chunk_bytes = (arg_line_chars / 4) * 3 * 1024;                  // 1024 lines per chunk, a multiple of 3 bytes
+    const l_parts = [];
+    for (let l_pos = 0; l_pos < arg_bytes.length; l_pos += l_chunk_bytes) {
+        const l_b64 = bytesToBase64(arg_bytes.subarray(l_pos, l_pos + l_chunk_bytes));
+        const l_lines = [];
+        for (let l_i = 0; l_i < l_b64.length; l_i += arg_line_chars) { l_lines.push(l_b64.slice(l_i, l_i + arg_line_chars)); }
+        l_parts.push(l_lines.join("\n") + "\n");
+    }
+    return l_parts;
+}
+
+/**
+ * Strict base64 decoder. Whitespace (line breaks) is ignored.
+ * @param {string} arg_text
+ * @returns {Uint8Array}
+ */
+function base64ToBytes(arg_text) {
+    const l_clean = arg_text.replace(/\s+/g, "");
+    if (l_clean.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(l_clean)) { throw new HypervaultError("CORRUPT", "The vault data is not valid base64. The file is damaged or not a vault."); }
+    const l_native = /** @type {any} */ (Uint8Array).fromBase64;
+    if (typeof l_native === "function") { return l_native(l_clean); }   // Native in new browsers
+    const l_padding = l_clean.endsWith("==") ? 2 : (l_clean.endsWith("=") ? 1 : 0);
+    const l_out = new Uint8Array((l_clean.length / 4) * 3 - l_padding);
+    let l_out_pos = 0;
+    for (let l_pos = 0; l_pos < l_clean.length; l_pos += G_BASE64_CHUNK_CHARS) {
+        const l_binary = atob(l_clean.slice(l_pos, l_pos + G_BASE64_CHUNK_CHARS));
+        for (let l_i = 0; l_i < l_binary.length; l_i++) { l_out[l_out_pos++] = l_binary.charCodeAt(l_i); }
+    }
+    return l_out;
+}
+
+/**
+ * Give the browser a chance to repaint and handle input during long computations.
+ * @returns {Promise<void>}
+ */
+function yieldToEventLoop() {
+    return new Promise((arg_resolve) => {
+        g_yield_queue.push(arg_resolve);
+        G_YIELD_CHANNEL.port2.postMessage(0);                              // Not setTimeout: timers are throttled to 1/s (or 1/min) in background tabs, scrypt would take minutes
+    });
+}
+
+/**
+ * Unicode normalize (NFC) so the same password typed on Windows, macOS or Linux gives the same bytes.
+ * @param {string} arg_password
+ * @returns {Uint8Array}
+ */
+function passwordToBytes(arg_password) {
+    return utf8Encode(arg_password.normalize("NFC"));
+}
+
+// ------------------------------------------------------------------------------------------------------------ scrypt
+
+/**
+ * Throws if the scrypt parameters are outside the supported limits (protects against hostile vault headers).
+ * @param {number} arg_log2_n
+ * @param {number} arg_r
+ * @param {number} arg_p
+ * @returns {void}
+ */
+function validateScryptParams(arg_log2_n, arg_r, arg_p) {
+    const l_checks = [["log2N", arg_log2_n], ["r", arg_r], ["p", arg_p]];
+    for (const [l_name, l_value] of l_checks) {
+        const l_limits = G_SCRYPT_LIMITS[/** @type {"log2N"|"r"|"p"} */ (l_name)];
+        if (!Number.isInteger(l_value) || l_value < l_limits[0] || l_value > l_limits[1]) {
+            throw new HypervaultError("LIMITS", `scrypt parameter ${l_name}=${l_value} is outside the supported range ${l_limits[0]}..${l_limits[1]}.`);
+        }
+    }
+    const l_memory = 128 * arg_r * 2 ** arg_log2_n;                           // Size of the scrypt V table in bytes
+    if (l_memory > G_SCRYPT_MAX_MEMORY_BYTES) {
+        throw new HypervaultError("LIMITS", `scrypt would need ${Math.round(l_memory / 1048576)} MiB of RAM, the limit is ${G_SCRYPT_MAX_MEMORY_BYTES / 1048576} MiB.`);
+    }
+}
+
+/**
+ * PBKDF2-HMAC-SHA256 with 1 iteration, as used inside scrypt.
+ * @param {Uint8Array} arg_password
+ * @param {Uint8Array} arg_salt
+ * @param {number} arg_length_bytes
+ * @returns {Promise<Uint8Array>}
+ */
+async function pbkdf2Sha256Once(arg_password, arg_salt, arg_length_bytes) {
+    const l_key = await crypto.subtle.importKey("raw", arg_password, "PBKDF2", false, ["deriveBits"]);
+    const l_bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: arg_salt, iterations: 1 }, l_key, arg_length_bytes * 8);
+    return new Uint8Array(l_bits);
+}
+
+/**
+ * Salsa20/8 core, in place on 16 uint32 words (RFC 7914 section 3).
+ * @param {Uint32Array} arg_b
+ * @returns {void}
+ */
+function salsa20_8(arg_b) {
+    let l_x0 = arg_b[0], l_x1 = arg_b[1], l_x2 = arg_b[2], l_x3 = arg_b[3], l_x4 = arg_b[4], l_x5 = arg_b[5], l_x6 = arg_b[6], l_x7 = arg_b[7];
+    let l_x8 = arg_b[8], l_x9 = arg_b[9], l_x10 = arg_b[10], l_x11 = arg_b[11], l_x12 = arg_b[12], l_x13 = arg_b[13], l_x14 = arg_b[14], l_x15 = arg_b[15];
+    let l_u = 0;
+    for (let l_i = 0; l_i < 8; l_i += 2) {
+        // Column round
+        l_u = (l_x0 + l_x12) | 0;  l_x4 ^= (l_u << 7) | (l_u >>> 25);
+        l_u = (l_x4 + l_x0) | 0;   l_x8 ^= (l_u << 9) | (l_u >>> 23);
+        l_u = (l_x8 + l_x4) | 0;   l_x12 ^= (l_u << 13) | (l_u >>> 19);
+        l_u = (l_x12 + l_x8) | 0;  l_x0 ^= (l_u << 18) | (l_u >>> 14);
+        l_u = (l_x5 + l_x1) | 0;   l_x9 ^= (l_u << 7) | (l_u >>> 25);
+        l_u = (l_x9 + l_x5) | 0;   l_x13 ^= (l_u << 9) | (l_u >>> 23);
+        l_u = (l_x13 + l_x9) | 0;  l_x1 ^= (l_u << 13) | (l_u >>> 19);
+        l_u = (l_x1 + l_x13) | 0;  l_x5 ^= (l_u << 18) | (l_u >>> 14);
+        l_u = (l_x10 + l_x6) | 0;  l_x14 ^= (l_u << 7) | (l_u >>> 25);
+        l_u = (l_x14 + l_x10) | 0; l_x2 ^= (l_u << 9) | (l_u >>> 23);
+        l_u = (l_x2 + l_x14) | 0;  l_x6 ^= (l_u << 13) | (l_u >>> 19);
+        l_u = (l_x6 + l_x2) | 0;   l_x10 ^= (l_u << 18) | (l_u >>> 14);
+        l_u = (l_x15 + l_x11) | 0; l_x3 ^= (l_u << 7) | (l_u >>> 25);
+        l_u = (l_x3 + l_x15) | 0;  l_x7 ^= (l_u << 9) | (l_u >>> 23);
+        l_u = (l_x7 + l_x3) | 0;   l_x11 ^= (l_u << 13) | (l_u >>> 19);
+        l_u = (l_x11 + l_x7) | 0;  l_x15 ^= (l_u << 18) | (l_u >>> 14);
+        // Row round
+        l_u = (l_x0 + l_x3) | 0;   l_x1 ^= (l_u << 7) | (l_u >>> 25);
+        l_u = (l_x1 + l_x0) | 0;   l_x2 ^= (l_u << 9) | (l_u >>> 23);
+        l_u = (l_x2 + l_x1) | 0;   l_x3 ^= (l_u << 13) | (l_u >>> 19);
+        l_u = (l_x3 + l_x2) | 0;   l_x0 ^= (l_u << 18) | (l_u >>> 14);
+        l_u = (l_x5 + l_x4) | 0;   l_x6 ^= (l_u << 7) | (l_u >>> 25);
+        l_u = (l_x6 + l_x5) | 0;   l_x7 ^= (l_u << 9) | (l_u >>> 23);
+        l_u = (l_x7 + l_x6) | 0;   l_x4 ^= (l_u << 13) | (l_u >>> 19);
+        l_u = (l_x4 + l_x7) | 0;   l_x5 ^= (l_u << 18) | (l_u >>> 14);
+        l_u = (l_x10 + l_x9) | 0;  l_x11 ^= (l_u << 7) | (l_u >>> 25);
+        l_u = (l_x11 + l_x10) | 0; l_x8 ^= (l_u << 9) | (l_u >>> 23);
+        l_u = (l_x8 + l_x11) | 0;  l_x9 ^= (l_u << 13) | (l_u >>> 19);
+        l_u = (l_x9 + l_x8) | 0;   l_x10 ^= (l_u << 18) | (l_u >>> 14);
+        l_u = (l_x15 + l_x14) | 0; l_x12 ^= (l_u << 7) | (l_u >>> 25);
+        l_u = (l_x12 + l_x15) | 0; l_x13 ^= (l_u << 9) | (l_u >>> 23);
+        l_u = (l_x13 + l_x12) | 0; l_x14 ^= (l_u << 13) | (l_u >>> 19);
+        l_u = (l_x14 + l_x13) | 0; l_x15 ^= (l_u << 18) | (l_u >>> 14);
+    }
+    arg_b[0] += l_x0;   arg_b[1] += l_x1;   arg_b[2] += l_x2;   arg_b[3] += l_x3;                // Uint32Array stores the sums modulo 2^32
+    arg_b[4] += l_x4;   arg_b[5] += l_x5;   arg_b[6] += l_x6;   arg_b[7] += l_x7;
+    arg_b[8] += l_x8;   arg_b[9] += l_x9;   arg_b[10] += l_x10; arg_b[11] += l_x11;
+    arg_b[12] += l_x12; arg_b[13] += l_x13; arg_b[14] += l_x14; arg_b[15] += l_x15;
+}
+
+/**
+ * scryptBlockMix with Salsa20/8 (RFC 7914 section 4), in place on arg_b (32*r words).
+ * @param {Uint32Array} arg_b    Block to mix, 32*r words
+ * @param {Uint32Array} arg_y    Scratch, 32*r words
+ * @param {Uint32Array} arg_x    Scratch, 16 words
+ * @param {number} arg_r
+ * @returns {void}
+ */
+function blockMixSalsa8(arg_b, arg_y, arg_x, arg_r) {
+    const l_block_count = 2 * arg_r;
+    const l_last = (l_block_count - 1) * 16;
+    for (let l_w = 0; l_w < 16; l_w++) { arg_x[l_w] = arg_b[l_last + l_w]; }                        // X = B[2r-1]
+    for (let l_i = 0; l_i < l_block_count; l_i++) {
+        const l_in = l_i * 16;
+        for (let l_w = 0; l_w < 16; l_w++) { arg_x[l_w] ^= arg_b[l_in + l_w]; }                     // X = X xor B[i]
+        salsa20_8(arg_x);
+        const l_out = ((l_i & 1) * arg_r + (l_i >>> 1)) * 16;                                        // Even Y[i] go to the first half, odd Y[i] to the second half
+        for (let l_w = 0; l_w < 16; l_w++) { arg_y[l_out + l_w] = arg_x[l_w]; }
+    }
+    arg_b.set(arg_y);
+}
+
+/**
+ * @param {Uint8Array} arg_bytes
+ * @returns {Uint32Array}
+ */
+function bytesToWordsLE(arg_bytes) {
+    const l_words = new Uint32Array(arg_bytes.length >>> 2);
+    for (let l_i = 0, l_j = 0; l_i < l_words.length; l_i++, l_j += 4) {
+        l_words[l_i] = arg_bytes[l_j] | (arg_bytes[l_j + 1] << 8) | (arg_bytes[l_j + 2] << 16) | (arg_bytes[l_j + 3] << 24);
+    }
+    return l_words;
+}
+
+/**
+ * @param {Uint32Array} arg_words
+ * @returns {Uint8Array}
+ */
+function wordsToBytesLE(arg_words) {
+    const l_bytes = new Uint8Array(arg_words.length * 4);
+    for (let l_i = 0, l_j = 0; l_i < arg_words.length; l_i++, l_j += 4) {
+        const l_w = arg_words[l_i];
+        l_bytes[l_j] = l_w & 0xFF;
+        l_bytes[l_j + 1] = (l_w >>> 8) & 0xFF;
+        l_bytes[l_j + 2] = (l_w >>> 16) & 0xFF;
+        l_bytes[l_j + 3] = (l_w >>> 24) & 0xFF;
+    }
+    return l_bytes;
+}
+
+/**
+ * scrypt key derivation (RFC 7914). PBKDF2-HMAC-SHA256 comes from WebCrypto, the memory-hard ROMix is done here.
+ * Runs asynchronously and yields to the browser now and then so the page stays responsive.
+ * @param {Uint8Array} arg_password
+ * @param {Uint8Array} arg_salt
+ * @param {number} arg_log2_n          N = 2^arg_log2_n
+ * @param {number} arg_r
+ * @param {number} arg_p
+ * @param {number} arg_dk_len          Output length in bytes
+ * @param {(arg_fraction: number) => void} [arg_progress]
+ * @returns {Promise<Uint8Array>}
+ */
+async function scrypt(arg_password, arg_salt, arg_log2_n, arg_r, arg_p, arg_dk_len, arg_progress) {
+    validateScryptParams(arg_log2_n, arg_r, arg_p);
+    const l_n = 2 ** arg_log2_n;
+    const l_block_words = 32 * arg_r;                                                    // One scrypt block is 128*r bytes
+    const l_b_bytes = await pbkdf2Sha256Once(arg_password, arg_salt, arg_p * 128 * arg_r);
+    const l_b = bytesToWordsLE(l_b_bytes);
+    l_b_bytes.fill(0);
+    const l_v = new Uint32Array(l_block_words * l_n);                                    // The memory-hard table: 128*r*N bytes
+    const l_x = new Uint32Array(l_block_words);
+    const l_y = new Uint32Array(l_block_words);
+    const l_t = new Uint32Array(16);
+    const l_total_steps = 2 * l_n * arg_p;
+    let l_last_yield = Date.now();
+    for (let l_i = 0; l_i < arg_p; l_i++) {
+        const l_offset = l_i * l_block_words;
+        for (let l_w = 0; l_w < l_block_words; l_w++) { l_x[l_w] = l_b[l_offset + l_w]; }
+        for (let l_phase = 0; l_phase < 2; l_phase++) {
+            for (let l_j = 0; l_j < l_n; l_j++) {
+                if (l_phase === 0) {
+                    l_v.set(l_x, l_j * l_block_words);                                   // ROMix step 1: V[j] = X
+                } else {
+                    const l_k = (l_x[l_block_words - 16] & (l_n - 1)) * l_block_words;   // ROMix step 2: j = Integerify(X) mod N
+                    for (let l_w = 0; l_w < l_block_words; l_w++) { l_x[l_w] ^= l_v[l_k + l_w]; }
+                }
+                blockMixSalsa8(l_x, l_y, l_t, arg_r);
+                if ((l_j & 1023) !== 1023) { continue; }
+                if (Date.now() - l_last_yield < G_SCRYPT_YIELD_MS) { continue; }
+                if (arg_progress) { arg_progress((l_i * 2 * l_n + l_phase * l_n + l_j + 1) / l_total_steps); }
+                await yieldToEventLoop();
+                l_last_yield = Date.now();
+            }
+        }
+        for (let l_w = 0; l_w < l_block_words; l_w++) { l_b[l_offset + l_w] = l_x[l_w]; }
+    }
+    l_v.fill(0);                                                                         // Wipe intermediate secrets
+    l_x.fill(0);
+    l_y.fill(0);
+    l_t.fill(0);
+    const l_b_out = wordsToBytesLE(l_b);
+    l_b.fill(0);
+    const l_result = await pbkdf2Sha256Once(arg_password, l_b_out, arg_dk_len);
+    l_b_out.fill(0);
+    if (arg_progress) { arg_progress(1); }
+    return l_result;
+}
+
+// ------------------------------------------------------------------------------------------------------------ AES-GCM and compression
+
+/**
+ * @param {Uint8Array} arg_raw
+ * @param {"encrypt"|"decrypt"} arg_usage
+ * @returns {Promise<CryptoKey>}
+ */
+function importAesGcmKey(arg_raw, arg_usage) {
+    return crypto.subtle.importKey("raw", arg_raw, { name: "AES-GCM" }, false, [arg_usage]);   // Non-extractable key
+}
+
+/**
+ * @param {CryptoKey} arg_key
+ * @param {Uint8Array} arg_iv
+ * @param {Uint8Array} arg_data
+ * @param {Uint8Array} arg_aad
+ * @returns {Promise<Uint8Array>}
+ */
+async function aesGcmEncrypt(arg_key, arg_iv, arg_data, arg_aad) {
+    return new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: arg_iv, additionalData: arg_aad, tagLength: 128 }, arg_key, arg_data));
+}
+
+/**
+ * Throws if the key is wrong or the data (or AAD) has been modified.
+ * @param {CryptoKey} arg_key
+ * @param {Uint8Array} arg_iv
+ * @param {Uint8Array} arg_data
+ * @param {Uint8Array} arg_aad
+ * @returns {Promise<Uint8Array>}
+ */
+async function aesGcmDecrypt(arg_key, arg_iv, arg_data, arg_aad) {
+    return new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv: arg_iv, additionalData: arg_aad, tagLength: 128 }, arg_key, arg_data));
+}
+
+/**
+ * Run bytes through a CompressionStream or DecompressionStream.
+ * @param {Uint8Array} arg_bytes
+ * @param {TransformStream<Uint8Array, Uint8Array>} arg_transform
+ * @returns {Promise<Uint8Array>}
+ */
+async function streamTransform(arg_bytes, arg_transform) {
+    const l_stream = new Blob([arg_bytes]).stream().pipeThrough(arg_transform);
+    return new Uint8Array(await new Response(l_stream).arrayBuffer());
+}
+
+// ------------------------------------------------------------------------------------------------------------ Payload
+
+/**
+ * @typedef {Object} HvFile
+ * @property {string} name
+ * @property {string} type
+ * @property {number} lastModified   Milliseconds since 1970, 0 if unknown
+ * @property {Uint8Array} bytes
+ */
+
+/**
+ * @typedef {Object} HvPayload
+ * @property {string} app
+ * @property {string} created        ISO date of when the vault was locked
+ * @property {HvFile[]} files
+ */
+
+/**
+ * Pack the files and a manifest into one byte array.
+ * @param {HvFile[]} arg_files
+ * @param {string} arg_created_iso
+ * @returns {Uint8Array}
+ */
+function packPayload(arg_files, arg_created_iso) {
+    const l_manifest = {
+        app: G_APP_NAME,
+        created: arg_created_iso,
+        files: arg_files.map((arg_file) => ({ name: arg_file.name, type: arg_file.type, size: arg_file.bytes.length, lastModified: arg_file.lastModified })),
+    };
+    const l_manifest_bytes = utf8Encode(JSON.stringify(l_manifest));
+    let l_total = 4 + l_manifest_bytes.length;
+    for (const l_file of arg_files) { l_total += l_file.bytes.length; }
+    const l_out = new Uint8Array(l_total);
+    l_out.set(writeUint32BE(l_manifest_bytes.length), 0);
+    l_out.set(l_manifest_bytes, 4);
+    let l_pos = 4 + l_manifest_bytes.length;
+    for (const l_file of arg_files) {
+        l_out.set(l_file.bytes, l_pos);
+        l_pos += l_file.bytes.length;
+    }
+    return l_out;
+}
+
+/**
+ * Inverse of packPayload(). The returned file bytes are views into arg_payload (no copies).
+ * @param {Uint8Array} arg_payload
+ * @returns {HvPayload}
+ */
+function unpackPayload(arg_payload) {
+    const l_corrupt = new HypervaultError("CORRUPT", "The vault content is malformed.");
+    if (arg_payload.length < 4) { throw l_corrupt; }
+    const l_manifest_len = readUint32BE(arg_payload, 0);
+    if (l_manifest_len > G_MAX_MANIFEST_BYTES || 4 + l_manifest_len > arg_payload.length) { throw l_corrupt; }
+    /** @type {any} */
+    let l_manifest = null;
+    try {
+        l_manifest = JSON.parse(utf8DecodeStrict(arg_payload.subarray(4, 4 + l_manifest_len)));
+    } catch (l_error) {
+        throw l_corrupt;
+    }
+    if (!l_manifest || !Array.isArray(l_manifest.files)) { throw l_corrupt; }
+    /** @type {HvFile[]} */
+    const l_files = [];
+    let l_pos = 4 + l_manifest_len;
+    for (const l_entry of l_manifest.files) {
+        if (!l_entry || typeof l_entry.name !== "string" || !Number.isSafeInteger(l_entry.size) || l_entry.size < 0) { throw l_corrupt; }
+        if (l_pos + l_entry.size > arg_payload.length) { throw l_corrupt; }
+        l_files.push({
+            name: l_entry.name || "unnamed",
+            type: typeof l_entry.type === "string" ? l_entry.type : "",
+            lastModified: Number.isFinite(l_entry.lastModified) ? l_entry.lastModified : 0,
+            bytes: arg_payload.subarray(l_pos, l_pos + l_entry.size),
+        });
+        l_pos += l_entry.size;
+    }
+    if (l_pos !== arg_payload.length) { throw l_corrupt; }
+    return {
+        app: typeof l_manifest.app === "string" ? l_manifest.app : "",
+        created: typeof l_manifest.created === "string" ? l_manifest.created : "",
+        files: l_files,
+    };
+}
+
+// ------------------------------------------------------------------------------------------------------------ Vault encrypt / decrypt
+
+/**
+ * @typedef {Object} ParsedVault
+ * @property {any} header
+ * @property {Uint8Array} prefix       Magic + header length + header (the AAD)
+ * @property {Uint8Array} salt
+ * @property {Uint8Array} wrapIv
+ * @property {Uint8Array} dataIv
+ * @property {Uint8Array} wrappedKey
+ * @property {Uint8Array} ciphertext
+ */
+
+/**
+ * Decode a base64 field of the header and check its length.
+ * @param {any} arg_value
+ * @param {number} arg_min_length
+ * @param {number} arg_max_length
+ * @returns {Uint8Array}
+ */
+function decodeHeaderBytes(arg_value, arg_min_length, arg_max_length) {
+    if (typeof arg_value !== "string") { throw new HypervaultError("CORRUPT", "The vault header is malformed."); }
+    const l_bytes = base64ToBytes(arg_value);
+    if (l_bytes.length < arg_min_length || l_bytes.length > arg_max_length) { throw new HypervaultError("CORRUPT", "The vault header is malformed."); }
+    return l_bytes;
+}
+
+/**
+ * Split a binary vault into its parts and validate the header. Does not need the password.
+ * @param {Uint8Array} arg_blob
+ * @returns {ParsedVault}
+ */
+function parseVaultBlob(arg_blob) {
+    if (arg_blob.length < 8) { throw new HypervaultError("NOT_A_VAULT", "This is not a Hypervault Next Gen vault."); }
+    for (let l_i = 0; l_i < G_VAULT_MAGIC.length; l_i++) {
+        if (arg_blob[l_i] !== G_VAULT_MAGIC[l_i]) { throw new HypervaultError("NOT_A_VAULT", "This is not a Hypervault Next Gen vault."); }
+    }
+    const l_header_len = readUint32BE(arg_blob, 4);
+    if (l_header_len === 0 || l_header_len > G_MAX_HEADER_BYTES) { throw new HypervaultError("CORRUPT", "The vault header is malformed."); }
+    const l_prefix_len = 8 + l_header_len;
+    if (arg_blob.length < l_prefix_len + G_WRAPPED_KEY_BYTES + G_GCM_TAG_BYTES) { throw new HypervaultError("CORRUPT", "The vault file is truncated."); }
+    /** @type {any} */
+    let l_header = null;
+    try {
+        l_header = JSON.parse(utf8DecodeStrict(arg_blob.subarray(8, l_prefix_len)));
+    } catch (l_error) {
+        throw new HypervaultError("CORRUPT", "The vault header is malformed.");
+    }
+    if (!l_header || typeof l_header !== "object") { throw new HypervaultError("CORRUPT", "The vault header is malformed."); }
+    if (l_header.format !== G_VAULT_FORMAT_VERSION) {
+        throw new HypervaultError("UNSUPPORTED", `This vault uses format version ${String(l_header.format)}, this Hypervault only knows version ${G_VAULT_FORMAT_VERSION}. Use a newer Hypervault.`);
+    }
+    const l_kdf = l_header.kdf;
+    if (!l_kdf || l_kdf.name !== "scrypt") { throw new HypervaultError("UNSUPPORTED", "Unsupported key derivation in the vault header."); }
+    validateScryptParams(l_kdf.log2N, l_kdf.r, l_kdf.p);
+    if (!l_header.keyWrap || l_header.keyWrap.alg !== "AES-256-GCM") { throw new HypervaultError("UNSUPPORTED", "Unsupported key wrapping in the vault header."); }
+    if (!l_header.payload || l_header.payload.alg !== "AES-256-GCM") { throw new HypervaultError("UNSUPPORTED", "Unsupported encryption in the vault header."); }
+    if (l_header.payload.compression !== "none" && l_header.payload.compression !== "gzip") { throw new HypervaultError("UNSUPPORTED", "Unsupported compression in the vault header."); }
+    return {
+        header: l_header,
+        prefix: arg_blob.subarray(0, l_prefix_len),
+        salt: decodeHeaderBytes(l_kdf.salt, 16, 64),
+        wrapIv: decodeHeaderBytes(l_header.keyWrap.iv, G_IV_BYTES, G_IV_BYTES),
+        dataIv: decodeHeaderBytes(l_header.payload.iv, G_IV_BYTES, G_IV_BYTES),
+        wrappedKey: arg_blob.subarray(l_prefix_len, l_prefix_len + G_WRAPPED_KEY_BYTES),
+        ciphertext: arg_blob.subarray(l_prefix_len + G_WRAPPED_KEY_BYTES),
+    };
+}
+
+/**
+ * Encrypt files into a binary vault (see the layout at the top of this block).
+ * @param {HvFile[]} arg_files
+ * @param {string} arg_password
+ * @param {{log2N: number, r: number, p: number, compress: boolean}} arg_options
+ * @param {(arg_phase: string, arg_fraction: number|null) => void} [arg_progress]
+ * @returns {Promise<Uint8Array>}
+ */
+async function encryptVault(arg_files, arg_password, arg_options, arg_progress) {
+    const l_progress = arg_progress || (() => {});
+    if (!arg_password) { throw new HypervaultError("INPUT", "A password is required."); }
+    validateScryptParams(arg_options.log2N, arg_options.r, arg_options.p);
+
+    l_progress("pack", null);
+    await yieldToEventLoop();
+    let l_payload = packPayload(arg_files, new Date().toISOString());
+    const l_use_gzip = Boolean(arg_options.compress) && typeof CompressionStream === "function";
+    if (l_use_gzip) {
+        l_progress("compress", null);
+        await yieldToEventLoop();
+        const l_compressed = await streamTransform(l_payload, new CompressionStream("gzip"));
+        l_payload.fill(0);                                                                // Wipe the uncompressed plaintext copy
+        l_payload = l_compressed;
+    }
+
+    const l_data_key_raw = randomBytes(G_KEY_BYTES);                                      // The real encryption key: 256 random bits from the CSPRNG
+    let l_kek_raw = new Uint8Array(0);
+    try {
+        const l_salt = randomBytes(G_SALT_BYTES);
+        const l_wrap_iv = randomBytes(G_IV_BYTES);
+        const l_data_iv = randomBytes(G_IV_BYTES);
+        const l_header = {
+            format: G_VAULT_FORMAT_VERSION,
+            kdf: { name: "scrypt", log2N: arg_options.log2N, r: arg_options.r, p: arg_options.p, salt: bytesToBase64(l_salt) },
+            keyWrap: { alg: "AES-256-GCM", iv: bytesToBase64(l_wrap_iv) },
+            payload: { alg: "AES-256-GCM", iv: bytesToBase64(l_data_iv), compression: l_use_gzip ? "gzip" : "none" },
+        };
+        const l_header_bytes = utf8Encode(JSON.stringify(l_header));
+        const l_prefix = concatBytes([Uint8Array.from(G_VAULT_MAGIC), writeUint32BE(l_header_bytes.length), l_header_bytes]);   // Authenticated as AAD below
+
+        const l_password_bytes = passwordToBytes(arg_password);
+        try {
+            l_kek_raw = await scrypt(l_password_bytes, l_salt, arg_options.log2N, arg_options.r, arg_options.p, G_KEY_BYTES, (arg_fraction) => l_progress("kdf", arg_fraction));
+        } finally {
+            l_password_bytes.fill(0);
+        }
+        l_progress("encrypt", null);
+        await yieldToEventLoop();
+        const l_kek = await importAesGcmKey(l_kek_raw, "encrypt");
+        const l_wrapped_key = await aesGcmEncrypt(l_kek, l_wrap_iv, l_data_key_raw, l_prefix);       // Data key encrypted with the password derived key
+        const l_data_key = await importAesGcmKey(l_data_key_raw, "encrypt");
+        const l_ciphertext = await aesGcmEncrypt(l_data_key, l_data_iv, l_payload, l_prefix);         // Files encrypted with the random data key
+        return concatBytes([l_prefix, l_wrapped_key, l_ciphertext]);
+    } finally {
+        l_kek_raw.fill(0);                                                                // Wipe raw key material and the plaintext copy
+        l_data_key_raw.fill(0);
+        l_payload.fill(0);
+    }
+}
+
+/**
+ * Decrypt a binary vault.
+ * @param {Uint8Array} arg_blob
+ * @param {string} arg_password
+ * @param {(arg_phase: string, arg_fraction: number|null) => void} [arg_progress]
+ * @returns {Promise<HvPayload>}
+ */
+async function decryptVault(arg_blob, arg_password, arg_progress) {
+    const l_progress = arg_progress || (() => {});
+    const l_parsed = parseVaultBlob(arg_blob);
+    const l_kdf = l_parsed.header.kdf;
+    if (l_parsed.header.payload.compression === "gzip" && typeof DecompressionStream !== "function") {
+        throw new HypervaultError("UNSUPPORTED", "This browser cannot decompress the vault (DecompressionStream is missing). Use a newer browser.");
+    }
+
+    const l_password_bytes = passwordToBytes(arg_password);
+    /** @type {Uint8Array} */
+    let l_kek_raw = new Uint8Array(0);
+    try {
+        l_kek_raw = await scrypt(l_password_bytes, l_parsed.salt, l_kdf.log2N, l_kdf.r, l_kdf.p, G_KEY_BYTES, (arg_fraction) => l_progress("kdf", arg_fraction));
+    } finally {
+        l_password_bytes.fill(0);
+    }
+    /** @type {Uint8Array} */
+    let l_data_key_raw = new Uint8Array(0);
+    try {
+        const l_kek = await importAesGcmKey(l_kek_raw, "decrypt");
+        l_data_key_raw = await aesGcmDecrypt(l_kek, l_parsed.wrapIv, l_parsed.wrappedKey, l_parsed.prefix);
+    } catch (l_error) {
+        throw new HypervaultError("WRONG_PASSWORD", "Wrong password.");                  // GCM tag mismatch: wrong password (or a modified header)
+    } finally {
+        l_kek_raw.fill(0);
+    }
+
+    /** @type {Uint8Array} */
+    let l_payload = new Uint8Array(0);
+    try {
+        l_progress("decrypt", null);
+        await yieldToEventLoop();
+        const l_data_key = await importAesGcmKey(l_data_key_raw, "decrypt");
+        l_payload = await aesGcmDecrypt(l_data_key, l_parsed.dataIv, l_parsed.ciphertext, l_parsed.prefix);
+    } catch (l_error) {
+        throw new HypervaultError("CORRUPT", "The password is correct, but the vault data is damaged or has been modified.");
+    } finally {
+        l_data_key_raw.fill(0);
+    }
+
+    if (l_parsed.header.payload.compression === "gzip") {
+        l_progress("decompress", null);
+        await yieldToEventLoop();
+        try {
+            const l_decompressed = await streamTransform(l_payload, new DecompressionStream("gzip"));
+            l_payload.fill(0);
+            l_payload = l_decompressed;
+        } catch (l_error) {
+            l_payload.fill(0);
+            throw new HypervaultError("CORRUPT", "The vault content could not be decompressed.");
+        }
+    }
+    try {
+        return unpackPayload(l_payload);
+    } catch (l_error) {
+        l_payload.fill(0);                                                                // Do not leave decrypted data behind on errors
+        throw l_error;
+    }
+}
+</script>
+
+<script id="hv-app" data-hv>
+"use strict";
+// =====================================================================================================================
+// Hypervault app: everything that touches the page. The cryptography is in the hv-crypto-core block above.
+// =====================================================================================================================
+
+const G_APP_VERSION = "2026-11-06 19:58:45";
+const G_DATA_SLOT_ID = "hv-vault-data";
+const G_DATA_SLOT_TOKEN = "@@HV_" + "DATA_SLOT@@";            // Built from two parts so the token never appears literally in this source
+const G_BASE64_LINE_CHARS = 76;
+const G_MIB = 1024 * 1024;
+const G_MAX_VAULT_FILE_BYTES = 500 * 1024 * 1024;                    // Browsers cannot hold a longer string (Chrome: 2^29 chars, Blob.text() then silently returns ""), so a bigger vault could never be opened
+const G_BIDI_CONTROL_RE = /[‎‏‪-‮⁦-⁩]/g;   // Can make "evil‮txt.exe" look like "evilexe.txt"
+const G_AUTO_LOCK_CHECK_MS = 15000;
+const G_DOWNLOAD_ALL_DELAY_MS = 400;
+const G_IMAGE_MIME_BY_EXT = new Map([["png", "image/png"], ["jpg", "image/jpeg"], ["jpeg", "image/jpeg"], ["gif", "image/gif"], ["webp", "image/webp"], ["bmp", "image/bmp"], ["avif", "image/avif"], ["svg", "image/svg+xml"], ["ico", "image/x-icon"]]);
+const G_IMAGE_MIMES = new Set([...G_IMAGE_MIME_BY_EXT.values(), "image/vnd.microsoft.icon"]);
+const G_TEXT_EXTENSIONS = new Set(["txt", "md", "markdown", "csv", "tsv", "log", "json", "json5", "xml", "yaml", "yml", "ini", "cfg", "conf", "toml", "py", "js", "ts", "c", "h", "cpp", "hpp", "cs", "java", "php", "rb", "go", "rs", "sh", "bat", "cmd", "ps1", "sql", "html", "htm", "css", "nfo", "reg", "srt"]);
+const G_ICON_FILE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 100 100" aria-hidden="true"><path d="M20,4 L20,96 L82,96 L82,29 L57,4 Z" fill="none" stroke="#94A3B8" stroke-width="7"/><path d="M57,4 L57,31 L82,31" fill="none" stroke="#94A3B8" stroke-width="7"/></svg>';
+const G_ICON_TEXT_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 100 100" aria-hidden="true"><path d="M20,4 L20,96 L82,96 L82,29 L57,4 Z" fill="none" stroke="#94A3B8" stroke-width="7"/><path d="M57,4 L57,31 L82,31" fill="none" stroke="#94A3B8" stroke-width="7"/><path d="M33,50 L69,50 M33,64 L69,64 M33,78 L58,78" stroke="#94A3B8" stroke-width="6"/></svg>';
+const G_PROGRESS_LABELS = Object.freeze({ pack: "Packing files", compress: "Compressing", kdf: "Hardening the password (scrypt)", encrypt: "Encrypting", decrypt: "Decrypting", decompress: "Decompressing", read: "Reading files", build: "Building the vault file", vaultfile: "Reading the vault file" });
+
+/**
+ * Settings: type, limits, built-in fallback value and the texts shown in the Settings tab.
+ * The fallbacks are used when G_DEFAULT_SETTINGS is missing a value or has an invalid one.
+ */
+const G_SETTINGS_SCHEMA = Object.freeze({
+    scryptLog2N: { kind: "int", min: 14, max: 20, fallback: 17, label: "Password hardening (scrypt cost, log2 N)", help: "Password hardening: scrypt N = 2^value. Each +1 doubles the time and RAM to unlock, and the cost of guessing passwords. Allowed 14..20" },
+    scryptR: { kind: "int", min: 1, max: 32, fallback: 8, label: "scrypt block size (r)", help: "scrypt block size r. RAM needed = 128 * r * N bytes (128 MiB with the defaults, max 1 GiB). Allowed 1..32" },
+    scryptP: { kind: "int", min: 1, max: 16, fallback: 1, label: "scrypt parallelism (p)", help: "scrypt parallelism p. Unlock time grows linearly with p, RAM does not. Allowed 1..16" },
+    compress: { kind: "bool", fallback: true, label: "Compress files (gzip) before encryption", help: "gzip the files before encryption. Smaller vaults for text and documents, no gain for jpg, zip or mp4" },
+    minPasswordLength: { kind: "int", min: 1, max: 256, fallback: 12, label: "Minimum password length", help: "Shortest password (in characters) accepted when a vault is locked. Allowed 1..256" },
+    vaultFileName: { kind: "text", maxLength: 200, fallback: "locked_hypervault_{date}.html", label: "Vault file name", help: "File name of a new vault. {date} becomes the local date and time, e.g. 2026-11-06_083205" },
+    autoLockMinutes: { kind: "int", min: 0, max: 1440, fallback: 15, label: "Auto lock after idle minutes", help: "Lock an unlocked vault again after this many minutes without mouse or keyboard activity. 0 = never" },
+    textPreviewMaxMB: { kind: "int", min: 0, max: 1024, fallback: 5, label: "Max text preview size (MB)", help: "Text files larger than this (MB) can only be downloaded, not previewed. 0 = no text preview" },
+    warnTotalSizeMB: { kind: "int", min: 0, max: 100000, fallback: 200, label: "Ask before locking more than (MB)", help: "Ask before locking more than this many MB (big vaults are slow to open and need a lot of RAM). 0 = never ask" },
+});
+
+/**
+ * @typedef {Object} StagedFile
+ * @property {number} id
+ * @property {string} name              Name used inside the vault (made unique)
+ * @property {string} originalName      Name on disk, "" for inserted text (used to detect duplicates)
+ * @property {string} type
+ * @property {number} size
+ * @property {number} lastModified
+ * @property {File|Uint8Array} source   The file on disk, or the UTF-8 bytes of inserted text
+ * @property {string|null} thumbUrl     Blob URL of the thumbnail (images only)
+ */
+
+/**
+ * @typedef {Object} UnlockedFile
+ * @property {string} name
+ * @property {string} type
+ * @property {number} lastModified
+ * @property {Uint8Array} bytes
+ * @property {string|null} url          Blob URL (created on demand for previews)
+ */
+
+/** @type {Record<string, any>} */
+let g_settings = {};
+/** @type {Record<string, any>} */
+let g_loaded_defaults = {};
+/** @type {Set<string>} */
+const g_invalid_settings = new Set();
+/** @type {StagedFile[]} */
+let g_staged_files = [];
+let g_next_staged_id = 1;
+let g_is_busy = false;
+let g_active_tab = "lock";
+let g_embedded_base64 = "";                                                // Vault data embedded in this file ("" = this is the plain app)
+/** @type {string[]|null} */
+let g_template_parts = null;                                               // This file split around the data slot, used to build new vaults
+/** @type {{kind: string, label: string, base64: string, blob: Uint8Array|null}|null} */
+let g_unlock_source = null;                                                // blob is set for files (decoded and checked when chosen), base64 for the embedded vault
+/** @type {{app: string, created: string, files: UnlockedFile[]}|null} */
+let g_unlocked = null;
+let g_last_activity = Date.now();
+let g_viewer_index = -1;
+let g_drag_depth = 0;
+
+// ------------------------------------------------------------------------------------------------------------ Small helpers
+
+/**
+ * @param {string} arg_id
+ * @returns {any}
+ */
+function getEl(arg_id) {
+    const l_el = document.getElementById(arg_id);
+    if (!l_el) { throw new Error(`Missing element #${arg_id}`); }
+    return l_el;
+}
+
+/**
+ * @param {string} arg_tag
+ * @param {string} [arg_class]
+ * @param {string} [arg_text]
+ * @returns {any}
+ */
+function createEl(arg_tag, arg_class, arg_text) {
+    const l_el = document.createElement(arg_tag);
+    if (arg_class) { l_el.className = arg_class; }
+    if (arg_text !== undefined) { l_el.textContent = arg_text; }   // Always textContent: file names never become HTML
+    return l_el;
+}
+
+/**
+ * @param {number} arg_bytes
+ * @returns {string}
+ */
+function formatBytes(arg_bytes) {
+    if (!Number.isFinite(arg_bytes) || arg_bytes < 1024) { return `${Math.max(0, Math.round(arg_bytes || 0))} B`; }   // Also handles 0 (the old code showed "NaN undefined")
+    const l_units = ["KB", "MB", "GB", "TB", "PB"];
+    let l_value = arg_bytes;
+    let l_index = -1;
+    while (l_value >= 1024 && l_index < l_units.length - 1) {
+        l_value /= 1024;
+        l_index++;
+    }
+    return `${l_value.toFixed(l_value < 10 ? 2 : 1)} ${l_units[l_index]}`;
+}
+
+/**
+ * @param {number} arg_n
+ * @returns {string}
+ */
+function pad2(arg_n) {
+    return String(arg_n).padStart(2, "0");
+}
+
+/**
+ * @param {Date} arg_date
+ * @returns {string}  e.g. 2026-11-06_083205
+ */
+function formatFileStamp(arg_date) {
+    return `${arg_date.getFullYear()}-${pad2(arg_date.getMonth() + 1)}-${pad2(arg_date.getDate())}_${pad2(arg_date.getHours())}${pad2(arg_date.getMinutes())}${pad2(arg_date.getSeconds())}`;
+}
+
+/**
+ * @param {number|string} arg_value  Milliseconds since 1970 or an ISO date
+ * @returns {string}  e.g. 2026-11-06 08:32, "" if unknown
+ */
+function formatDateTime(arg_value) {
+    const l_date = new Date(arg_value);
+    if (Number.isNaN(l_date.getTime()) || l_date.getTime() <= 0) { return ""; }
+    return `${l_date.getFullYear()}-${pad2(l_date.getMonth() + 1)}-${pad2(l_date.getDate())} ${pad2(l_date.getHours())}:${pad2(l_date.getMinutes())}`;
+}
+
+/**
+ * @param {...string} arg_parts
+ * @returns {string}
+ */
+function joinMeta(...arg_parts) {
+    return arg_parts.filter(Boolean).join(" · ");
+}
+
+/**
+ * @param {string} arg_name
+ * @returns {string}  Lower case extension without the dot, "" if none
+ */
+function getExtension(arg_name) {
+    const l_dot = arg_name.lastIndexOf(".");
+    if (l_dot <= 0) { return ""; }
+    return arg_name.slice(l_dot + 1).toLowerCase();
+}
+
+/**
+ * Replace characters that Windows does not allow in file names.
+ * @param {string} arg_name
+ * @returns {string}
+ */
+function sanitizeFileName(arg_name) {
+    return arg_name.replace(G_BIDI_CONTROL_RE, "").replace(/[<>:"/\\|?*\u0000-\u001F\u007F]/g, "_").trim().replace(/[. ]+$/, "");   // Windows also drops trailing dots and spaces
+}
+
+/**
+ * File name for display: removes the invisible bidi control characters that can disguise the real extension.
+ * @param {string} arg_name
+ * @returns {string}
+ */
+function displayFileName(arg_name) {
+    return arg_name.replace(G_BIDI_CONTROL_RE, "");
+}
+
+/**
+ * @param {number} arg_byte_count  Length of the binary vault
+ * @returns {number}  Size in bytes of the vault HTML file (base64 in lines of G_BASE64_LINE_CHARS + the template)
+ */
+function estimateVaultHtmlBytes(arg_byte_count) {
+    const l_base64_chars = Math.ceil(arg_byte_count / 3) * 4;
+    const l_template_chars = g_template_parts ? g_template_parts[0].length + g_template_parts[1].length : 0;
+    return l_base64_chars + Math.ceil(l_base64_chars / G_BASE64_LINE_CHARS) + l_template_chars + 1;
+}
+
+/**
+ * @param {unknown} arg_error
+ * @returns {string}
+ */
+function describeError(arg_error) {
+    if (arg_error instanceof HypervaultError) { return arg_error.message; }
+    const l_error = /** @type {any} */ (arg_error);
+    if (arg_error instanceof RangeError || (l_error && l_error.name === "QuotaExceededError")) {
+        return "Not enough memory for this operation. Try fewer or smaller files, close other tabs, or lower the scrypt cost in Settings.";
+    }
+    return `Unexpected error: ${l_error && l_error.message ? l_error.message : String(arg_error)}`;
+}
+
+// ------------------------------------------------------------------------------------------------------------ Status, progress, busy state
+
+/**
+ * @param {string} arg_scope   "lock", "unlock" or "settings"
+ * @param {""|"ok"|"error"|"info"} arg_kind
+ * @param {string} arg_message  "" hides the status box
+ * @returns {void}
+ */
+function showStatus(arg_scope, arg_kind, arg_message) {
+    const l_el = getEl(`${arg_scope}-status`);
+    l_el.textContent = arg_message;
+    l_el.className = arg_kind ? `status status-${arg_kind}` : "status";
+    l_el.hidden = !arg_message;
+}
+
+/**
+ * @param {string} arg_scope
+ * @param {string|null} arg_label      null hides the progress box
+ * @param {number|null} [arg_fraction] null = indeterminate
+ * @returns {void}
+ */
+function setProgress(arg_scope, arg_label, arg_fraction) {
+    const l_box = getEl(`${arg_scope}-progress`);
+    if (arg_label === null) {
+        l_box.hidden = true;
+        return;
+    }
+    l_box.hidden = false;
+    const l_bar = getEl(`${arg_scope}-progress-bar`);
+    const l_has_fraction = typeof arg_fraction === "number";
+    getEl(`${arg_scope}-progress-label`).textContent = l_has_fraction ? `${arg_label} ${Math.round(/** @type {number} */ (arg_fraction) * 100)} %` : arg_label;
+    if (l_has_fraction) {
+        l_bar.value = arg_fraction;
+    } else {
+        l_bar.removeAttribute("value");                                     // No value = indeterminate (animated) progress bar
+    }
+}
+
+/**
+ * @param {string} arg_scope
+ * @returns {(arg_phase: string, arg_fraction: number|null) => void}
+ */
+function makeProgressReporter(arg_scope) {
+    return (arg_phase, arg_fraction) => {
+        const l_label = /** @type {Record<string, string>} */ (G_PROGRESS_LABELS)[arg_phase] || arg_phase;
+        setProgress(arg_scope, l_label, arg_fraction);
+    };
+}
+
+/**
+ * @param {boolean} arg_busy
+ * @returns {void}
+ */
+function setBusy(arg_busy) {
+    g_is_busy = arg_busy;
+    for (const l_el of document.querySelectorAll("[data-busy-disable]")) { /** @type {any} */ (l_el).disabled = arg_busy; }
+    updateLockButton();
+    updateUnlockButton();
+}
+
+/**
+ * @param {string} arg_message
+ * @returns {void}
+ */
+function showBanner(arg_message) {
+    const l_banner = getEl("banner");
+    l_banner.textContent = l_banner.textContent ? `${l_banner.textContent}\n\n${arg_message}` : arg_message;
+    l_banner.hidden = false;
+}
+
+// ------------------------------------------------------------------------------------------------------------ Settings
+
+/**
+ * Validate and convert one setting value.
+ * @param {string} arg_key
+ * @param {unknown} arg_value
+ * @returns {{value?: any, error?: string}}
+ */
+function coerceSettingValue(arg_key, arg_value) {
+    const l_spec = /** @type {any} */ (G_SETTINGS_SCHEMA)[arg_key];
+    if (l_spec.kind === "bool") {
+        if (typeof arg_value === "boolean") { return { value: arg_value }; }
+        return { error: "must be true or false" };
+    }
+    if (l_spec.kind === "text") {
+        if (typeof arg_value !== "string") { return { error: "must be a text in quotes" }; }
+        if (!arg_value.trim()) { return { error: "must not be empty" }; }
+        if (arg_value.length > l_spec.maxLength) { return { error: `must be at most ${l_spec.maxLength} characters` }; }
+        return { value: arg_value };
+    }
+    const l_number = typeof arg_value === "string" && arg_value.trim() !== "" ? Number(arg_value) : arg_value;   // Number inputs deliver strings
+    if (typeof l_number !== "number" || !Number.isInteger(l_number)) { return { error: "must be a whole number" }; }
+    if (l_number < l_spec.min || l_number > l_spec.max) { return { error: `must be between ${l_spec.min} and ${l_spec.max}` }; }
+    return { value: l_number };
+}
+
+/**
+ * @param {Record<string, any>} arg_settings
+ * @returns {number}  RAM in bytes that scrypt needs with these settings
+ */
+function scryptMemoryBytes(arg_settings) {
+    return 128 * arg_settings.scryptR * 2 ** arg_settings.scryptLog2N;
+}
+
+/**
+ * @param {Record<string, any>} arg_settings
+ * @returns {string}  "" if OK
+ */
+function checkScryptMemory(arg_settings) {
+    const l_memory = scryptMemoryBytes(arg_settings);
+    if (l_memory <= G_SCRYPT_MAX_MEMORY_BYTES) { return ""; }
+    return `scrypt would need ${formatBytes(l_memory)} of RAM, the limit is ${formatBytes(G_SCRYPT_MAX_MEMORY_BYTES)}. Lower the cost (log2 N) or r.`;
+}
+
+/**
+ * Read G_DEFAULT_SETTINGS (edited by hand in this file) and fall back per setting when something is wrong.
+ * @returns {{settings: Record<string, any>, problems: string[]}}
+ */
+function loadDefaultSettings() {
+    /** @type {string[]} */
+    const l_problems = [];
+    /** @type {Record<string, any>} */
+    const l_settings = {};
+    const l_source = typeof G_DEFAULT_SETTINGS === "object" && G_DEFAULT_SETTINGS !== null ? /** @type {Record<string, any>} */ (G_DEFAULT_SETTINGS) : null;   // typeof is safe even if the settings block failed to run
+    if (!l_source) { l_problems.push("G_DEFAULT_SETTINGS could not be read (missing, or a syntax error in the settings block). Built-in defaults are used."); }
+    for (const l_key of Object.keys(G_SETTINGS_SCHEMA)) {
+        const l_spec = /** @type {any} */ (G_SETTINGS_SCHEMA)[l_key];
+        l_settings[l_key] = l_spec.fallback;
+        if (!l_source) { continue; }
+        if (!Object.prototype.hasOwnProperty.call(l_source, l_key)) {
+            l_problems.push(`${l_key} is missing, using ${JSON.stringify(l_spec.fallback)}.`);
+            continue;
+        }
+        const l_result = coerceSettingValue(l_key, l_source[l_key]);
+        if (l_result.error) {
+            l_problems.push(`${l_key} ${l_result.error}, using ${JSON.stringify(l_spec.fallback)}.`);
+            continue;
+        }
+        l_settings[l_key] = l_result.value;
+    }
+    if (l_source) {
+        for (const l_key of Object.keys(l_source)) {
+            if (!Object.prototype.hasOwnProperty.call(G_SETTINGS_SCHEMA, l_key)) { l_problems.push(`Unknown setting "${l_key}" is ignored (misspelled?).`); }
+        }
+    }
+    const l_memory_error = checkScryptMemory(l_settings);
+    if (l_memory_error) {
+        l_problems.push(`${l_memory_error} Using the built-in scrypt values.`);
+        for (const l_key of ["scryptLog2N", "scryptR", "scryptP"]) { l_settings[l_key] = /** @type {any} */ (G_SETTINGS_SCHEMA)[l_key].fallback; }
+    }
+    return { settings: l_settings, problems: l_problems };
+}
+
+/**
+ * Build the Settings tab form from G_SETTINGS_SCHEMA.
+ * @returns {void}
+ */
+function renderSettingsForm() {
+    const l_container = getEl("settings-fields");
+    l_container.replaceChildren();
+    for (const l_key of Object.keys(G_SETTINGS_SCHEMA)) {
+        const l_spec = /** @type {any} */ (G_SETTINGS_SCHEMA)[l_key];
+        const l_row = createEl("div", "field");
+        const l_input = document.createElement("input");
+        l_input.id = `setting-${l_key}`;
+        if (l_spec.kind === "bool") {
+            l_input.type = "checkbox";
+            const l_label = createEl("label", "checkbox-label setting-bool");
+            l_label.append(l_input, document.createTextNode(` ${l_spec.label}`));
+            l_row.append(l_label);
+        } else {
+            const l_label = createEl("label", "", l_spec.label);
+            l_label.htmlFor = l_input.id;
+            l_input.type = l_spec.kind === "int" ? "number" : "text";
+            if (l_spec.kind === "int") {
+                l_input.min = String(l_spec.min);
+                l_input.max = String(l_spec.max);
+                l_input.step = "1";
+            } else {
+                l_input.maxLength = l_spec.maxLength;
+                l_input.spellcheck = false;
+            }
+            l_row.append(l_label, l_input);
+        }
+        l_input.addEventListener("input", () => onSettingChanged(l_key));
+        l_input.addEventListener("change", () => onSettingChanged(l_key));
+        l_row.append(createEl("div", "help-text", l_spec.help));
+        const l_error = createEl("div", "validation-error");
+        l_error.id = `setting-error-${l_key}`;
+        l_error.hidden = true;
+        l_row.append(l_error);
+        l_container.append(l_row);
+    }
+    writeSettingsToForm();
+}
+
+/**
+ * @returns {void}
+ */
+function writeSettingsToForm() {
+    for (const l_key of Object.keys(G_SETTINGS_SCHEMA)) {
+        const l_input = getEl(`setting-${l_key}`);
+        if (l_input.type === "checkbox") {
+            l_input.checked = Boolean(g_settings[l_key]);
+        } else {
+            l_input.value = String(g_settings[l_key]);
+        }
+        setSettingError(l_key, "");
+    }
+    refreshSettingsInfo();
+}
+
+/**
+ * @param {string} arg_key
+ * @param {string} arg_message  "" clears the error
+ * @returns {void}
+ */
+function setSettingError(arg_key, arg_message) {
+    const l_el = getEl(`setting-error-${arg_key}`);
+    l_el.textContent = arg_message;
+    l_el.hidden = !arg_message;
+    if (arg_message) {
+        g_invalid_settings.add(arg_key);
+    } else {
+        g_invalid_settings.delete(arg_key);
+    }
+}
+
+/**
+ * @param {string} arg_key
+ * @returns {void}
+ */
+function onSettingChanged(arg_key) {
+    const l_input = getEl(`setting-${arg_key}`);
+    const l_raw = l_input.type === "checkbox" ? l_input.checked : l_input.value;
+    const l_result = coerceSettingValue(arg_key, l_raw);
+    setSettingError(arg_key, l_result.error ? `The value ${l_result.error}.` : "");
+    if (!l_result.error) { g_settings[arg_key] = l_result.value; }
+    refreshSettingsInfo();
+    validateLockPasswords(false);                                          // The minimum length may have changed
+}
+
+/**
+ * @returns {void}
+ */
+function refreshSettingsInfo() {
+    const l_memory_error = checkScryptMemory(g_settings);
+    const l_memory_el = getEl("settings-memory-error");
+    l_memory_el.textContent = l_memory_error;
+    l_memory_el.hidden = !l_memory_error;
+    getEl("settings-info").textContent = `Each lock and unlock needs ${formatBytes(scryptMemoryBytes(g_settings))} of RAM (N = ${2 ** g_settings.scryptLog2N}, r = ${g_settings.scryptR}, p = ${g_settings.scryptP}).`;
+    getEl("settings-code").value = buildSettingsCode(g_settings);
+}
+
+/**
+ * @returns {string}  "" if the current settings can be used
+ */
+function getSettingsProblem() {
+    if (g_invalid_settings.size > 0) { return `Fix the settings first (tab Settings): ${Array.from(g_invalid_settings).join(", ")}.`; }
+    return checkScryptMemory(g_settings);
+}
+
+/**
+ * @param {Record<string, any>} arg_settings
+ * @returns {string}  JavaScript source for the G_DEFAULT_SETTINGS block
+ */
+function buildSettingsCode(arg_settings) {
+    const l_lines = ["const G_DEFAULT_SETTINGS = Object.freeze({"];
+    for (const l_key of Object.keys(G_SETTINGS_SCHEMA)) {
+        const l_entry = `    ${l_key}: ${JSON.stringify(arg_settings[l_key]).replace(/</g, "\\u003C")},`;   // A "<" could end the script block when pasted into this file (a closing script tag in a text value)
+        l_lines.push(`${l_entry.padEnd(52)}// ${/** @type {any} */ (G_SETTINGS_SCHEMA)[l_key].help}`);
+    }
+    l_lines.push("});");
+    return l_lines.join("\n");
+}
+
+/**
+ * @returns {Promise<void>}
+ */
+async function copySettingsCode() {
+    const l_textarea = getEl("settings-code");
+    try {
+        await navigator.clipboard.writeText(l_textarea.value);
+        showStatus("settings", "ok", "Copied. Paste it over the G_DEFAULT_SETTINGS block in this file.");
+    } catch (l_error) {
+        l_textarea.focus();
+        l_textarea.select();
+        showStatus("settings", "info", "The text is selected, press Ctrl+C to copy it.");
+    }
+}
+
+/**
+ * Time one scrypt run with the current settings.
+ * @returns {Promise<void>}
+ */
+async function measureScryptSpeed() {
+    if (g_is_busy) { return; }
+    const l_problem = getSettingsProblem();
+    if (l_problem) {
+        showStatus("settings", "error", l_problem);
+        return;
+    }
+    showStatus("settings", "", "");
+    setBusy(true);
+    const l_start = performance.now();
+    try {
+        await scrypt(utf8Encode("speed test"), randomBytes(G_SALT_BYTES), g_settings.scryptLog2N, g_settings.scryptR, g_settings.scryptP, G_KEY_BYTES, (arg_fraction) => setProgress("settings", "Measuring", arg_fraction));
+        const l_seconds = (performance.now() - l_start) / 1000;
+        showStatus("settings", "ok", `Locking or unlocking takes about ${l_seconds.toFixed(1)} s on this computer with these settings and needs ${formatBytes(scryptMemoryBytes(g_settings))} of RAM.\nA slower computer or phone takes longer. A long password protects much more than a high cost.`);
+    } catch (l_error) {
+        console.error("Speed measurement failed", l_error);
+        showStatus("settings", "error", describeError(l_error));
+    } finally {
+        setProgress("settings", null);
+        setBusy(false);
+    }
+}
+
+// ------------------------------------------------------------------------------------------------------------ Template (this file, used to build new vaults)
+
+/**
+ * Capture this page's own HTML as the template for new vaults. Must run before anything changes the DOM.
+ * Also moves the embedded vault data (if any) out of the DOM into g_embedded_base64.
+ * @returns {void}
+ */
+function captureTemplate() {
+    const l_slot = getEl(G_DATA_SLOT_ID);
+    g_embedded_base64 = (l_slot.textContent || "").trim();
+    l_slot.textContent = "";                                               // The data now lives in g_embedded_base64, keep it out of the clone
+    const l_clone = /** @type {HTMLElement} */ (document.documentElement.cloneNode(true));
+    for (const l_attr of Array.from(l_clone.attributes)) {
+        if (l_attr.name !== "lang" && l_attr.name !== "translate") { l_clone.removeAttribute(l_attr.name); }   // Keep only our own attributes
+    }
+    for (const l_section of [l_clone.querySelector("head"), l_clone.querySelector("body")]) {
+        if (!l_section) { continue; }
+        for (const l_child of Array.from(l_section.children)) {
+            if (!l_child.hasAttribute("data-hv")) { l_child.remove(); }    // Drop elements injected by browser extensions
+        }
+    }
+    const l_body = l_clone.querySelector("body");
+    if (l_body) {
+        for (const l_attr of Array.from(l_body.attributes)) { l_body.removeAttribute(l_attr.name); }
+    }
+    const l_clone_slot = l_clone.querySelector(`#${G_DATA_SLOT_ID}`);
+    if (!l_clone_slot) { throw new Error("The data slot is missing in the template."); }
+    l_clone_slot.textContent = G_DATA_SLOT_TOKEN;
+    const l_html = `<!DOCTYPE html>\n${l_clone.outerHTML}\n`;
+    const l_index = l_html.indexOf(G_DATA_SLOT_TOKEN);
+    if (l_index < 0 || l_index !== l_html.lastIndexOf(G_DATA_SLOT_TOKEN)) { throw new Error("The data slot token is not unique in the template."); }
+    g_template_parts = [l_html.slice(0, l_index), l_html.slice(l_index + G_DATA_SLOT_TOKEN.length)];
+}
+
+/**
+ * @param {Uint8Array} arg_vault_bytes
+ * @returns {Blob}  A complete vault HTML file
+ */
+function buildVaultHtmlBlob(arg_vault_bytes) {
+    if (!g_template_parts) { throw new Error("No template available."); }
+    const l_parts = [g_template_parts[0], "\n"].concat(bytesToBase64Lines(arg_vault_bytes, G_BASE64_LINE_CHARS), [g_template_parts[1]]);   // Many parts, no single giant string
+    return new Blob(l_parts, { type: "text/html;charset=utf-8" });
+}
+
+/**
+ * @param {string} arg_template  e.g. locked_hypervault_{date}.html
+ * @returns {string}
+ */
+function makeVaultFileName(arg_template) {
+    let l_name = sanitizeFileName(arg_template.split("{date}").join(formatFileStamp(new Date())));
+    if (!l_name) { l_name = `locked_hypervault_${formatFileStamp(new Date())}`; }
+    if (!/\.html?$/i.test(l_name)) { l_name += ".html"; }
+    return l_name;
+}
+
+/**
+ * Save a Blob as a file via a temporary download link.
+ * @param {Blob} arg_blob
+ * @param {string} arg_file_name
+ * @returns {void}
+ */
+function downloadBlob(arg_blob, arg_file_name) {
+    const l_url = URL.createObjectURL(arg_blob);
+    const l_link = document.createElement("a");
+    l_link.href = l_url;
+    l_link.download = arg_file_name;
+    l_link.hidden = true;
+    document.body.append(l_link);
+    l_link.click();
+    l_link.remove();
+    setTimeout(() => URL.revokeObjectURL(l_url), 60000);                   // Give the browser time to start the download before the URL is released
+}
+
+// ------------------------------------------------------------------------------------------------------------ Lock files
+
+/**
+ * @param {string} arg_name
+ * @returns {string}  arg_name, or "name (2).ext" etc. if the name is already used in the vault
+ */
+function makeUniqueName(arg_name) {
+    const l_taken = new Set(g_staged_files.map((arg_entry) => arg_entry.name.toLowerCase()));   // Case insensitive, like the Windows file system
+    if (!l_taken.has(arg_name.toLowerCase())) { return arg_name; }
+    const l_dot = arg_name.lastIndexOf(".");
+    const l_base = l_dot > 0 ? arg_name.slice(0, l_dot) : arg_name;
+    const l_ext = l_dot > 0 ? arg_name.slice(l_dot) : "";
+    for (let l_n = 2; ; l_n++) {
+        const l_candidate = `${l_base} (${l_n})${l_ext}`;
+        if (!l_taken.has(l_candidate.toLowerCase())) { return l_candidate; }
+    }
+}
+
+/**
+ * @param {File} arg_file
+ * @returns {boolean}  true if this exact file (name, size, date) is already staged
+ */
+function isAlreadyStaged(arg_file) {
+    return g_staged_files.some((arg_entry) => arg_entry.originalName === arg_file.name && arg_entry.size === arg_file.size && arg_entry.lastModified === arg_file.lastModified);
+}
+
+/**
+ * @param {File[]} arg_files
+ * @param {string[]} arg_skipped_folders
+ * @returns {void}
+ */
+function addFiles(arg_files, arg_skipped_folders) {
+    /** @type {string[]} */
+    const l_duplicates = [];
+    for (const l_file of arg_files) {
+        if (isAlreadyStaged(l_file)) {
+            l_duplicates.push(l_file.name);
+            continue;
+        }
+        g_staged_files.push({
+            id: g_next_staged_id++,
+            name: makeUniqueName(l_file.name || "unnamed"),
+            originalName: l_file.name,
+            type: l_file.type || "",
+            size: l_file.size,
+            lastModified: l_file.lastModified || Date.now(),
+            source: l_file,
+            thumbUrl: null,
+        });
+    }
+    renderStagedFiles();
+    /** @type {string[]} */
+    const l_messages = [];
+    if (l_duplicates.length > 0) { l_messages.push(`Already in the vault, skipped: ${l_duplicates.join(", ")}`); }
+    if (arg_skipped_folders.length > 0) { l_messages.push(`Folders cannot be added, skipped: ${arg_skipped_folders.join(", ")}. Zip the folder or select the files inside it.`); }
+    showStatus("lock", l_messages.length > 0 ? "info" : "", l_messages.join("\n"));
+}
+
+/**
+ * @param {number} arg_id
+ * @returns {void}
+ */
+function removeStagedFile(arg_id) {
+    if (g_is_busy) { return; }
+    const l_entry = g_staged_files.find((arg_entry) => arg_entry.id === arg_id);
+    if (!l_entry) { return; }
+    if (l_entry.thumbUrl) { URL.revokeObjectURL(l_entry.thumbUrl); }
+    g_staged_files = g_staged_files.filter((arg_entry) => arg_entry.id !== arg_id);
+    renderStagedFiles();
+}
+
+/**
+ * @returns {void}
+ */
+function clearStagedFiles() {
+    if (g_is_busy) { return; }
+    for (const l_entry of g_staged_files) {
+        if (l_entry.thumbUrl) { URL.revokeObjectURL(l_entry.thumbUrl); }
+    }
+    g_staged_files = [];
+    renderStagedFiles();
+    showStatus("lock", "", "");
+}
+
+/**
+ * @returns {void}
+ */
+function renderStagedFiles() {
+    const l_list = getEl("lock-file-list");
+    l_list.replaceChildren();
+    let l_total = 0;
+    for (const l_entry of g_staged_files) {
+        l_total += l_entry.size;
+        const l_row = createEl("div", "file-row");
+        const l_thumb = createEl("div", "file-thumb");
+        const l_is_image = l_entry.source instanceof File && G_IMAGE_MIMES.has(getImageMimeFor(l_entry.name, l_entry.type));
+        if (l_is_image) {
+            if (!l_entry.thumbUrl) { l_entry.thumbUrl = URL.createObjectURL(/** @type {File} */ (l_entry.source)); }
+            const l_img = createEl("img");
+            l_img.src = l_entry.thumbUrl;
+            l_img.alt = "";
+            l_thumb.append(l_img);
+        } else {
+            l_thumb.innerHTML = l_entry.source instanceof File ? G_ICON_FILE_SVG : G_ICON_TEXT_SVG;   // Static icon markup, no user data
+        }
+        const l_info = createEl("div", "file-info");
+        const l_kind = l_entry.source instanceof File ? "" : "inserted text";
+        l_info.append(createEl("div", "file-name", l_entry.name), createEl("div", "file-meta", joinMeta(formatBytes(l_entry.size), l_kind)));
+        const l_actions = createEl("div", "file-actions");
+        const l_remove = createEl("button", "btn btn-small", "Remove");
+        l_remove.type = "button";
+        l_remove.setAttribute("data-busy-disable", "");
+        l_remove.disabled = g_is_busy;
+        l_remove.addEventListener("click", () => removeStagedFile(l_entry.id));   // No inline onclick: names with ' or < are safe
+        l_actions.append(l_remove);
+        l_row.append(l_thumb, l_info, l_actions);
+        l_list.append(l_row);
+    }
+    getEl("lock-summary-row").hidden = g_staged_files.length === 0;
+    getEl("lock-summary").textContent = `${g_staged_files.length} ${g_staged_files.length === 1 ? "file" : "files"}, ${formatBytes(l_total)}`;
+    updateLockButton();
+}
+
+/**
+ * @returns {void}
+ */
+function updateLockButton() {
+    getEl("lock-button").disabled = g_is_busy || g_staged_files.length === 0 || !g_template_parts;
+}
+
+/**
+ * Show password problems. With arg_final = false (while typing) empty fields are not reported.
+ * @param {boolean} arg_final
+ * @returns {boolean}  true if the passwords can be used
+ */
+function validateLockPasswords(arg_final) {
+    const l_pw1 = getEl("lock-password").value;
+    const l_pw2 = getEl("lock-password2").value;
+    const l_length = Array.from(l_pw1).length;                             // Count characters (code points), not UTF-16 units
+    const l_min = g_settings.minPasswordLength;
+    let l_msg1 = "";
+    let l_msg2 = "";
+    if (l_pw1 === "") {
+        l_msg1 = arg_final ? "Password required." : "";
+    } else if (l_length < l_min) {
+        l_msg1 = `At least ${l_min} characters (now ${l_length}).`;
+    }
+    if (l_pw2 === "") {
+        l_msg2 = arg_final ? "Retype the password." : "";
+    } else if (l_pw1 !== l_pw2) {
+        l_msg2 = "The passwords don't match.";
+    }
+    const l_err1 = getEl("lock-password-error");
+    const l_err2 = getEl("lock-password2-error");
+    l_err1.textContent = l_msg1;
+    l_err1.hidden = !l_msg1;
+    l_err2.textContent = l_msg2;
+    l_err2.hidden = !l_msg2;
+    return l_pw1 !== "" && l_length >= l_min && l_pw1 === l_pw2;
+}
+
+/**
+ * @param {StagedFile} arg_entry
+ * @returns {Promise<Uint8Array>}
+ */
+async function readStagedFile(arg_entry) {
+    if (arg_entry.source instanceof Uint8Array) { return arg_entry.source; }
+    try {
+        return new Uint8Array(await arg_entry.source.arrayBuffer());
+    } catch (l_error) {
+        throw new HypervaultError("READ", `Could not read "${arg_entry.name}". Was it moved, deleted or changed after it was added? Remove it and add it again.`);
+    }
+}
+
+/**
+ * Lock all staged files into a new vault and download it.
+ * @returns {Promise<void>}
+ */
+async function startLock() {
+    if (g_is_busy) { return; }
+    if (g_staged_files.length === 0) {
+        showStatus("lock", "error", "Add at least one file or text first.");
+        return;
+    }
+    if (!g_template_parts) {
+        showStatus("lock", "error", "This copy of Hypervault cannot create vaults (the page template could not be read).");
+        return;
+    }
+    const l_settings_problem = getSettingsProblem();
+    if (l_settings_problem) {
+        showStatus("lock", "error", l_settings_problem);
+        return;
+    }
+    if (!validateLockPasswords(true)) {
+        showStatus("lock", "", "");
+        return;
+    }
+    const l_total = g_staged_files.reduce((arg_sum, arg_entry) => arg_sum + arg_entry.size, 0);
+    if (g_settings.warnTotalSizeMB > 0 && l_total > g_settings.warnTotalSizeMB * G_MIB) {
+        if (!window.confirm(`The files are ${formatBytes(l_total)} in total. Big vaults are slow to open and need several times that amount of RAM. Continue?`)) { return; }
+    }
+    const l_too_big_message = `A browser cannot open a vault file bigger than ${formatBytes(G_MAX_VAULT_FILE_BYTES)}. Split the files into several vaults.`;
+    if (!g_settings.compress && estimateVaultHtmlBytes(l_total) > G_MAX_VAULT_FILE_BYTES) {   // Without compression the size is known before the slow work starts
+        showStatus("lock", "error", l_too_big_message);
+        return;
+    }
+
+    const l_password = getEl("lock-password").value;
+    const l_progress = makeProgressReporter("lock");
+    showStatus("lock", "", "");
+    setBusy(true);
+    /** @type {Uint8Array[]} */
+    const l_read_buffers = [];
+    try {
+        l_progress("read", null);
+        /** @type {HvFile[]} */
+        const l_files = [];
+        for (const l_entry of g_staged_files) {
+            const l_bytes = await readStagedFile(l_entry);
+            if (l_entry.source instanceof File) { l_read_buffers.push(l_bytes); }
+            l_files.push({ name: l_entry.name, type: l_entry.type, lastModified: l_entry.lastModified, bytes: l_bytes });
+        }
+        const l_vault_bytes = await encryptVault(l_files, l_password, { log2N: g_settings.scryptLog2N, r: g_settings.scryptR, p: g_settings.scryptP, compress: g_settings.compress }, l_progress);
+        if (estimateVaultHtmlBytes(l_vault_bytes.length) > G_MAX_VAULT_FILE_BYTES) { throw new HypervaultError("LIMITS", l_too_big_message); }
+        l_progress("build", null);
+        await yieldToEventLoop();
+        const l_html_blob = buildVaultHtmlBlob(l_vault_bytes);
+        const l_file_name = makeVaultFileName(g_settings.vaultFileName);
+        downloadBlob(l_html_blob, l_file_name);
+        getEl("lock-password").value = "";
+        getEl("lock-password2").value = "";
+        validateLockPasswords(false);
+        showStatus("lock", "ok", `Vault saved as "${l_file_name}" (${formatBytes(l_html_blob.size)}). Look in your Downloads folder.\nKeep the password safe: without it the files cannot be recovered.`);
+    } catch (l_error) {
+        console.error("Locking failed", l_error);
+        showStatus("lock", "error", describeError(l_error));
+    } finally {
+        for (const l_bytes of l_read_buffers) { l_bytes.fill(0); }             // Wipe the plaintext copies read from disk
+        setProgress("lock", null);
+        setBusy(false);
+    }
+}
+
+// ------------------------------------------------------------------------------------------------------------ Insert text dialog
+
+/**
+ * @param {string} arg_name
+ * @returns {string}
+ */
+function ensureTextFileName(arg_name) {
+    let l_name = sanitizeFileName(arg_name);
+    if (!l_name) { return `note_${formatFileStamp(new Date())}.txt`; }
+    if (!/\.[A-Za-z0-9]{1,10}$/.test(l_name)) { l_name += ".txt"; }
+    return l_name;
+}
+
+/**
+ * @returns {void}
+ */
+function openTextDialog() {
+    if (g_is_busy) { return; }
+    getEl("text-dialog-error").hidden = true;
+    getEl("text-dialog").showModal();
+    getEl("text-dialog-text").focus();
+}
+
+/**
+ * @returns {void}
+ */
+function resetTextDialog() {
+    getEl("text-dialog-name").value = "";
+    getEl("text-dialog-text").value = "";
+    getEl("text-dialog-error").hidden = true;
+}
+
+/**
+ * @returns {void}
+ */
+function insertTextFromDialog() {
+    const l_text = getEl("text-dialog-text").value;
+    if (l_text.length === 0) {
+        const l_error = getEl("text-dialog-error");
+        l_error.textContent = "The text is empty.";
+        l_error.hidden = false;
+        return;
+    }
+    const l_name = makeUniqueName(ensureTextFileName(getEl("text-dialog-name").value));
+    const l_bytes = utf8Encode(l_text);                                    // UTF-8 handles every character (the old btoa() failed on e.g. emoji)
+    g_staged_files.push({ id: g_next_staged_id++, name: l_name, originalName: "", type: "text/plain", size: l_bytes.length, lastModified: Date.now(), source: l_bytes, thumbUrl: null });
+    getEl("text-dialog").close();                                          // The close event resets the fields
+    renderStagedFiles();
+    showStatus("lock", "ok", `Added the text as "${l_name}".`);
+}
+
+// ------------------------------------------------------------------------------------------------------------ Unlock
+
+/**
+ * Get the base64 vault data out of a vault HTML file without running any of its code.
+ * @param {string} arg_html
+ * @returns {string}
+ */
+function extractVaultData(arg_html) {
+    const l_doc = new DOMParser().parseFromString(arg_html, "text/html");   // Parsing only: scripts in the file are never executed
+    const l_slot = l_doc.getElementById(G_DATA_SLOT_ID);
+    if (!l_slot) {
+        if (arg_html.includes("encryptedFileData=\"") && !arg_html.includes("encryptedFileData=\"REPLACE_WITH_ENCRYPTED_DATA_\"")) {
+            throw new HypervaultError("LEGACY", "This is a vault from the old Hypervault (triplesec format). Open that file directly in the browser, download the files and lock them again with this version.");
+        }
+        throw new HypervaultError("NOT_A_VAULT", "This file is not a Hypervault vault.");
+    }
+    const l_data = (l_slot.textContent || "").trim();
+    if (!l_data) { throw new HypervaultError("NOT_A_VAULT", "This is the Hypervault app itself (no files locked inside), not a locked vault."); }
+    return l_data;
+}
+
+/**
+ * @param {File} arg_file
+ * @returns {Promise<void>}
+ */
+async function selectVaultFile(arg_file) {
+    if (g_is_busy) { return; }
+    lockUnlockedVault();
+    showStatus("unlock", "", "");
+    setBusy(true);
+    setProgress("unlock", G_PROGRESS_LABELS.vaultfile, null);
+    try {
+        if (arg_file.size > G_MAX_VAULT_FILE_BYTES + G_MIB) { throw new HypervaultError("NOT_A_VAULT", `The file is ${formatBytes(arg_file.size)}, too big to be a vault (max ${formatBytes(G_MAX_VAULT_FILE_BYTES)}).`); }
+        const l_blob = base64ToBytes(extractVaultData(await arg_file.text()));
+        parseVaultBlob(l_blob);                                            // Check the header now, so problems show up before the password is typed
+        g_unlock_source = { kind: "file", label: `${arg_file.name} (${formatBytes(arg_file.size)})`, base64: "", blob: l_blob };
+        renderUnlockSource();
+        getEl("unlock-password").focus();
+    } catch (l_error) {
+        console.error("Reading the vault file failed", l_error);
+        g_unlock_source = null;                                            // Do not leave an older vault selected under the error message
+        renderUnlockSource();
+        showStatus("unlock", "error", `${arg_file.name}: ${describeError(l_error)}`);
+    } finally {
+        setProgress("unlock", null);
+        setBusy(false);
+    }
+}
+
+/**
+ * @returns {void}
+ */
+function useEmbeddedVault() {
+    if (!g_embedded_base64 || g_is_busy) { return; }
+    lockUnlockedVault();
+    showStatus("unlock", "", "");
+    g_unlock_source = { kind: "embedded", label: "this file", base64: g_embedded_base64, blob: null };
+    renderUnlockSource();
+}
+
+/**
+ * @returns {void}
+ */
+function renderUnlockSource() {
+    getEl("unlock-source-label").textContent = g_unlock_source ? g_unlock_source.label : "none selected yet";
+    const l_is_embedded = Boolean(g_unlock_source && g_unlock_source.kind === "embedded");
+    getEl("unlock-trust-tip").hidden = !l_is_embedded;
+    getEl("unlock-use-embedded").hidden = !g_embedded_base64 || l_is_embedded;
+    updateUnlockButton();
+}
+
+/**
+ * @returns {void}
+ */
+function updateUnlockButton() {
+    getEl("unlock-button").disabled = g_is_busy || !g_unlock_source;
+}
+
+/**
+ * @returns {Promise<void>}
+ */
+async function startUnlock() {
+    if (g_is_busy || g_unlocked) { return; }
+    if (!g_unlock_source) {
+        showStatus("unlock", "error", "Choose a vault file first.");
+        return;
+    }
+    const l_password_input = getEl("unlock-password");
+    if (!l_password_input.value) {
+        showStatus("unlock", "error", "Password required.");
+        l_password_input.focus();
+        return;
+    }
+    showStatus("unlock", "", "");
+    setBusy(true);
+    try {
+        const l_blob = g_unlock_source.blob || base64ToBytes(g_unlock_source.base64);
+        const l_result = await decryptVault(l_blob, l_password_input.value, makeProgressReporter("unlock"));
+        l_password_input.value = "";
+        g_unlocked = { app: l_result.app, created: l_result.created, files: l_result.files.map((arg_file) => ({ ...arg_file, name: displayFileName(arg_file.name) || "unnamed", url: null })) };
+        g_last_activity = Date.now();
+        renderUnlockedFiles();
+        const l_created = formatDateTime(l_result.created);
+        showStatus("unlock", "ok", `Unlocked: ${l_result.files.length} ${l_result.files.length === 1 ? "file" : "files"}.${l_created ? ` The vault was locked ${l_created}.` : ""}`);
+    } catch (l_error) {
+        console.error("Unlocking failed", l_error);
+        const l_is_wrong_password = l_error instanceof HypervaultError && l_error.code === "WRONG_PASSWORD";
+        showStatus("unlock", "error", l_is_wrong_password ? "Wrong password." : describeError(l_error));
+        if (l_is_wrong_password) {
+            l_password_input.focus();
+            l_password_input.select();
+        }
+    } finally {
+        setProgress("unlock", null);
+        setBusy(false);
+    }
+}
+
+/**
+ * Close the unlocked vault: forget and wipe the decrypted files.
+ * @returns {void}
+ */
+function lockUnlockedVault() {
+    closeViewer();
+    if (g_unlocked) {
+        for (const l_file of g_unlocked.files) {
+            if (l_file.url) { URL.revokeObjectURL(l_file.url); }
+            l_file.url = null;
+            l_file.bytes.fill(0);                                          // Wipe the decrypted data
+        }
+    }
+    g_unlocked = null;
+    renderUnlockedFiles();
+}
+
+/**
+ * @param {string} arg_name
+ * @param {string} arg_type
+ * @returns {string}  The image MIME type, "" if it is not an image the browser can show
+ */
+function getImageMimeFor(arg_name, arg_type) {
+    const l_type = (arg_type || "").toLowerCase();
+    if (G_IMAGE_MIMES.has(l_type)) { return l_type; }
+    return G_IMAGE_MIME_BY_EXT.get(getExtension(arg_name)) || "";
+}
+
+/**
+ * @param {UnlockedFile} arg_file
+ * @returns {"image"|"text"|null}
+ */
+function getPreviewKind(arg_file) {
+    if (getImageMimeFor(arg_file.name, arg_file.type)) { return "image"; }
+    const l_type = (arg_file.type || "").toLowerCase();
+    const l_is_text = l_type.startsWith("text/") || l_type === "application/json" || l_type === "application/xml" || G_TEXT_EXTENSIONS.has(getExtension(arg_file.name));
+    if (!l_is_text) { return null; }
+    if (g_settings.textPreviewMaxMB === 0) { return null; }                 // 0 = no text preview at all (also for empty files)
+    if (arg_file.bytes.length > g_settings.textPreviewMaxMB * G_MIB) { return null; }
+    return "text";
+}
+
+/**
+ * @param {UnlockedFile} arg_file
+ * @returns {string}  Blob URL for showing the image
+ */
+function ensureFileUrl(arg_file) {
+    if (!arg_file.url) { arg_file.url = URL.createObjectURL(new Blob([arg_file.bytes], { type: getImageMimeFor(arg_file.name, arg_file.type) || "application/octet-stream" })); }
+    return arg_file.url;
+}
+
+/**
+ * Decode a text file: UTF-16 with BOM, UTF-8, or Windows-1252 as fallback (old Windows files with e.g. a o a with dots in ANSI).
+ * @param {Uint8Array} arg_bytes
+ * @returns {string}
+ */
+function decodeText(arg_bytes) {
+    if (arg_bytes.length >= 2 && arg_bytes[0] === 0xFF && arg_bytes[1] === 0xFE) { return new TextDecoder("utf-16le").decode(arg_bytes.subarray(2)); }
+    if (arg_bytes.length >= 2 && arg_bytes[0] === 0xFE && arg_bytes[1] === 0xFF) { return new TextDecoder("utf-16be").decode(arg_bytes.subarray(2)); }
+    try {
+        return new TextDecoder("utf-8", { fatal: true }).decode(arg_bytes);  // Also removes a UTF-8 BOM
+    } catch (l_error) {
+        return new TextDecoder("windows-1252").decode(arg_bytes);
+    }
+}
+
+/**
+ * @returns {void}
+ */
+function renderUnlockedFiles() {
+    const l_list = getEl("unlocked-file-list");
+    l_list.replaceChildren();
+    if (!g_unlocked) {
+        getEl("unlocked-view").hidden = true;
+        getEl("unlock-form").hidden = false;
+        return;
+    }
+    getEl("unlock-form").hidden = true;
+    getEl("unlocked-view").hidden = false;
+    let l_total = 0;
+    g_unlocked.files.forEach((arg_file, arg_index) => {
+        l_total += arg_file.bytes.length;
+        const l_kind = getPreviewKind(arg_file);
+        const l_row = createEl("div", "file-row");
+        const l_thumb = createEl("div", "file-thumb");
+        if (l_kind === "image") {
+            const l_img = createEl("img");
+            l_img.src = ensureFileUrl(arg_file);
+            l_img.alt = "";
+            l_thumb.append(l_img);
+        } else {
+            l_thumb.innerHTML = l_kind === "text" ? G_ICON_TEXT_SVG : G_ICON_FILE_SVG;   // Static icon markup, no user data
+        }
+        if (l_kind) {
+            l_thumb.classList.add("clickable");
+            l_thumb.title = "View";
+            l_thumb.addEventListener("click", () => openViewer(arg_index));
+        }
+        const l_info = createEl("div", "file-info");
+        l_info.append(createEl("div", "file-name", arg_file.name), createEl("div", "file-meta", joinMeta(formatBytes(arg_file.bytes.length), formatDateTime(arg_file.lastModified))));
+        const l_actions = createEl("div", "file-actions");
+        if (l_kind) {
+            const l_view = createEl("button", "btn btn-small", "View");
+            l_view.type = "button";
+            l_view.addEventListener("click", () => openViewer(arg_index));
+            l_actions.append(l_view);
+        }
+        const l_download = createEl("button", "btn btn-small", "Download");
+        l_download.type = "button";
+        l_download.addEventListener("click", () => downloadUnlockedFile(arg_index));
+        l_actions.append(l_download);
+        l_row.append(l_thumb, l_info, l_actions);
+        l_list.append(l_row);
+    });
+    const l_count = g_unlocked.files.length;
+    getEl("unlocked-summary").textContent = `${l_count} ${l_count === 1 ? "file" : "files"}, ${formatBytes(l_total)}`;
+}
+
+/**
+ * @param {number} arg_index
+ * @returns {void}
+ */
+function downloadUnlockedFile(arg_index) {
+    if (!g_unlocked) { return; }
+    const l_file = g_unlocked.files[arg_index];
+    if (!l_file) { return; }
+    downloadBlob(new Blob([l_file.bytes], { type: "application/octet-stream" }), sanitizeFileName(l_file.name) || "unnamed");
+}
+
+/**
+ * @returns {Promise<void>}
+ */
+async function downloadAllUnlockedFiles() {
+    if (!g_unlocked) { return; }
+    const l_session = g_unlocked;
+    for (let l_i = 0; l_i < l_session.files.length; l_i++) {
+        if (g_unlocked !== l_session) { return; }                            // Locked (or another vault opened) in the meantime
+        downloadUnlockedFile(l_i);
+        await new Promise((arg_resolve) => { setTimeout(arg_resolve, G_DOWNLOAD_ALL_DELAY_MS); });   // Browsers drop downloads that start too close together
+    }
+}
+
+// ------------------------------------------------------------------------------------------------------------ Viewer
+
+/**
+ * @param {number} arg_index
+ * @returns {void}
+ */
+function openViewer(arg_index) {
+    if (!g_unlocked) { return; }
+    const l_file = g_unlocked.files[arg_index];
+    if (!l_file) { return; }
+    const l_kind = getPreviewKind(l_file);
+    if (!l_kind) { return; }
+    g_viewer_index = arg_index;
+    getEl("viewer-title").textContent = l_file.name;
+    getEl("viewer-meta").textContent = joinMeta(formatBytes(l_file.bytes.length), formatDateTime(l_file.lastModified));
+    const l_body = getEl("viewer-body");
+    l_body.replaceChildren();
+    if (l_kind === "image") {
+        const l_img = createEl("img", "viewer-image");
+        l_img.src = ensureFileUrl(l_file);
+        l_img.alt = l_file.name;
+        l_body.append(l_img);
+    } else {
+        const l_text = createEl("textarea", "viewer-text");
+        l_text.readOnly = true;
+        l_text.spellcheck = false;                                         // Chrome's enhanced spell check sends text to Google
+        l_text.value = decodeText(l_file.bytes);
+        l_body.append(l_text);
+    }
+    const l_previewable = g_unlocked.files.filter((arg_file) => getPreviewKind(arg_file) !== null).length;
+    getEl("viewer-prev").disabled = l_previewable < 2;
+    getEl("viewer-next").disabled = l_previewable < 2;
+    const l_dialog = getEl("viewer-dialog");
+    if (!l_dialog.open) { l_dialog.showModal(); }
+}
+
+/**
+ * @param {number} arg_direction  -1 or +1
+ * @returns {void}
+ */
+function stepViewer(arg_direction) {
+    if (!g_unlocked || g_viewer_index < 0) { return; }
+    const l_count = g_unlocked.files.length;
+    for (let l_step = 1; l_step < l_count; l_step++) {
+        const l_index = (((g_viewer_index + arg_direction * l_step) % l_count) + l_count) % l_count;   // Wrap around in both directions
+        if (getPreviewKind(g_unlocked.files[l_index]) === null) { continue; }
+        openViewer(l_index);
+        return;
+    }
+}
+
+/**
+ * @returns {void}
+ */
+function closeViewer() {
+    const l_dialog = getEl("viewer-dialog");
+    if (l_dialog.open) { l_dialog.close(); }
+    getEl("viewer-body").replaceChildren();
+    g_viewer_index = -1;
+}
+
+// ------------------------------------------------------------------------------------------------------------ Tabs, drag and drop, auto lock
+
+/**
+ * @param {string} arg_name  "lock", "unlock" or "settings"
+ * @returns {void}
+ */
+function showTab(arg_name) {
+    g_active_tab = arg_name;
+    for (const l_button of document.querySelectorAll(".tab")) {
+        const l_active = /** @type {HTMLElement} */ (l_button).dataset.tab === arg_name;
+        l_button.classList.toggle("active", l_active);
+        l_button.setAttribute("aria-selected", String(l_active));
+    }
+    for (const l_panel of document.querySelectorAll(".tab-panel")) { /** @type {HTMLElement} */ (l_panel).hidden = l_panel.id !== `panel-${arg_name}`; }
+}
+
+/**
+ * @param {DragEvent} arg_event
+ * @returns {boolean}
+ */
+function isFileDrag(arg_event) {
+    return Boolean(arg_event.dataTransfer && Array.from(arg_event.dataTransfer.types).includes("Files"));
+}
+
+/**
+ * @param {boolean} arg_on
+ * @returns {void}
+ */
+function updateDropHighlight(arg_on) {
+    getEl("lock-dropzone").classList.toggle("hover", arg_on && g_active_tab === "lock");
+    getEl("unlock-dropzone").classList.toggle("hover", arg_on && g_active_tab === "unlock");
+}
+
+/**
+ * @param {DataTransfer|null} arg_transfer
+ * @returns {void}
+ */
+function handleDrop(arg_transfer) {
+    if (!arg_transfer) { return; }
+    if (g_active_tab !== "lock" && g_active_tab !== "unlock") { return; }
+    if (g_is_busy) {
+        showStatus(g_active_tab, "error", "Please wait until the current operation is finished.");
+        return;
+    }
+    /** @type {File[]} */
+    const l_files = [];
+    /** @type {string[]} */
+    const l_folders = [];
+    const l_items = arg_transfer.items ? Array.from(arg_transfer.items) : [];
+    if (l_items.length > 0) {
+        for (const l_item of l_items) {
+            if (l_item.kind !== "file") { continue; }
+            const l_entry = typeof l_item.webkitGetAsEntry === "function" ? l_item.webkitGetAsEntry() : null;   // Only way to tell folders from files
+            const l_file = l_item.getAsFile();
+            if (l_entry && l_entry.isDirectory) {
+                l_folders.push(l_entry.name);
+                continue;
+            }
+            if (l_file) { l_files.push(l_file); }
+        }
+    } else {
+        l_files.push(...Array.from(arg_transfer.files || []));
+    }
+    if (g_active_tab === "lock") {
+        addFiles(l_files, l_folders);
+        return;
+    }
+    if (l_files.length === 0) {
+        showStatus("unlock", "error", "Drop a vault file (.html), not a folder.");
+        return;
+    }
+    selectVaultFile(l_files[0]);
+}
+
+/**
+ * @returns {void}
+ */
+function noteActivity() {
+    g_last_activity = Date.now();
+}
+
+/**
+ * @returns {void}
+ */
+function checkAutoLock() {
+    if (!g_unlocked || g_is_busy) { return; }
+    const l_minutes = g_settings.autoLockMinutes;
+    if (!(l_minutes > 0)) { return; }
+    if (Date.now() - g_last_activity < l_minutes * 60000) { return; }
+    lockUnlockedVault();
+    showStatus("unlock", "info", `The vault was locked again after ${l_minutes} ${l_minutes === 1 ? "minute" : "minutes"} without activity.`);
+}
+
+// ------------------------------------------------------------------------------------------------------------ Start
+
+/**
+ * @param {string} arg_id
+ * @param {() => void} arg_handler
+ * @returns {void}
+ */
+function onEnter(arg_id, arg_handler) {
+    getEl(arg_id).addEventListener("keydown", (/** @type {KeyboardEvent} */ arg_event) => {
+        if (arg_event.key !== "Enter" || arg_event.isComposing) { return; }
+        arg_event.preventDefault();                                        // Uses the event argument, not the global window.event
+        arg_handler();
+    });
+}
+
+/**
+ * @returns {void}
+ */
+function wireEvents() {
+    for (const l_button of document.querySelectorAll(".tab")) {
+        l_button.addEventListener("click", () => showTab(/** @type {string} */ (/** @type {HTMLElement} */ (l_button).dataset.tab)));
+    }
+
+    // Lock tab
+    getEl("lock-browse-button").addEventListener("click", () => getEl("lock-file-input").click());
+    getEl("lock-file-input").addEventListener("change", () => {
+        const l_input = getEl("lock-file-input");
+        addFiles(Array.from(l_input.files || []), []);
+        l_input.value = "";                                                // Allows selecting the same file again
+    });
+    getEl("lock-insert-text-button").addEventListener("click", openTextDialog);
+    getEl("lock-clear-button").addEventListener("click", clearStagedFiles);
+    getEl("lock-button").addEventListener("click", startLock);
+    getEl("lock-password").addEventListener("input", () => validateLockPasswords(false));
+    getEl("lock-password2").addEventListener("input", () => validateLockPasswords(false));
+    onEnter("lock-password", startLock);                                   // Enter only acts in the password fields, nowhere else
+    onEnter("lock-password2", startLock);
+    getEl("lock-show-password").addEventListener("change", () => {
+        const l_type = getEl("lock-show-password").checked ? "text" : "password";
+        getEl("lock-password").type = l_type;
+        getEl("lock-password2").type = l_type;
+    });
+
+    // Insert text dialog
+    getEl("text-dialog-insert").addEventListener("click", insertTextFromDialog);
+    getEl("text-dialog-cancel").addEventListener("click", () => getEl("text-dialog").close());
+    getEl("text-dialog-close").addEventListener("click", () => getEl("text-dialog").close());
+    getEl("text-dialog").addEventListener("close", resetTextDialog);
+    getEl("text-dialog").addEventListener("cancel", (/** @type {Event} */ arg_event) => {   // Escape: do not throw away typed text by accident
+        if (!getEl("text-dialog-text").value) { return; }
+        if (!window.confirm("Discard the text?")) { arg_event.preventDefault(); }
+    });
+    onEnter("text-dialog-name", () => getEl("text-dialog-text").focus());
+    getEl("text-dialog-text").addEventListener("keydown", (/** @type {KeyboardEvent} */ arg_event) => {
+        if (arg_event.key !== "Enter" || !arg_event.ctrlKey) { return; }
+        arg_event.preventDefault();
+        insertTextFromDialog();
+    });
+
+    // Unlock tab
+    getEl("unlock-choose-button").addEventListener("click", () => getEl("unlock-file-input").click());
+    getEl("unlock-file-input").addEventListener("change", () => {
+        const l_input = getEl("unlock-file-input");
+        const l_file = l_input.files && l_input.files[0];
+        l_input.value = "";
+        if (l_file) { selectVaultFile(l_file); }
+    });
+    getEl("unlock-use-embedded").addEventListener("click", useEmbeddedVault);
+    getEl("unlock-button").addEventListener("click", startUnlock);
+    onEnter("unlock-password", startUnlock);
+    getEl("unlock-show-password").addEventListener("change", () => {
+        getEl("unlock-password").type = getEl("unlock-show-password").checked ? "text" : "password";
+    });
+    getEl("unlocked-lock-button").addEventListener("click", () => {
+        lockUnlockedVault();
+        showStatus("unlock", "info", "The vault is locked again.");
+    });
+    getEl("unlocked-download-all").addEventListener("click", downloadAllUnlockedFiles);
+
+    // Viewer
+    getEl("viewer-close").addEventListener("click", closeViewer);
+    getEl("viewer-prev").addEventListener("click", () => stepViewer(-1));
+    getEl("viewer-next").addEventListener("click", () => stepViewer(1));
+    getEl("viewer-download").addEventListener("click", () => downloadUnlockedFile(g_viewer_index));
+    getEl("viewer-dialog").addEventListener("close", () => {
+        getEl("viewer-body").replaceChildren();
+        g_viewer_index = -1;
+    });
+    getEl("viewer-dialog").addEventListener("click", (/** @type {MouseEvent} */ arg_event) => {
+        if (arg_event.target === getEl("viewer-dialog")) { closeViewer(); }   // Click on the backdrop
+    });
+    getEl("viewer-dialog").addEventListener("keydown", (/** @type {KeyboardEvent} */ arg_event) => {
+        if (/** @type {HTMLElement} */ (arg_event.target).tagName === "TEXTAREA") { return; }   // Arrow keys move the cursor in text
+        if (arg_event.key === "ArrowLeft") { stepViewer(-1); }
+        if (arg_event.key === "ArrowRight") { stepViewer(1); }
+    });
+
+    // Settings tab
+    getEl("settings-measure-button").addEventListener("click", measureScryptSpeed);
+    getEl("settings-reset-button").addEventListener("click", () => {
+        g_settings = { ...g_loaded_defaults };
+        writeSettingsToForm();
+        validateLockPasswords(false);
+        showStatus("settings", "ok", "The settings are reset to the defaults in this file.");
+    });
+    getEl("settings-copy-button").addEventListener("click", copySettingsCode);
+
+    // Drag and drop anywhere on the page (also stops the browser from opening a dropped file)
+    window.addEventListener("dragenter", (/** @type {DragEvent} */ arg_event) => {
+        if (!isFileDrag(arg_event)) { return; }
+        g_drag_depth++;
+        updateDropHighlight(true);
+    });
+    window.addEventListener("dragleave", (/** @type {DragEvent} */ arg_event) => {
+        if (!isFileDrag(arg_event)) { return; }
+        g_drag_depth = Math.max(0, g_drag_depth - 1);
+        if (g_drag_depth === 0) { updateDropHighlight(false); }
+    });
+    window.addEventListener("dragover", (/** @type {DragEvent} */ arg_event) => {
+        if (!isFileDrag(arg_event)) { return; }
+        arg_event.preventDefault();
+        if (arg_event.dataTransfer) { arg_event.dataTransfer.dropEffect = g_active_tab === "settings" ? "none" : "copy"; }
+    });
+    window.addEventListener("drop", (/** @type {DragEvent} */ arg_event) => {
+        if (!isFileDrag(arg_event)) { return; }
+        arg_event.preventDefault();
+        g_drag_depth = 0;
+        updateDropHighlight(false);
+        handleDrop(arg_event.dataTransfer);
+    });
+
+    // Auto lock
+    for (const l_event_name of ["pointerdown", "pointermove", "keydown", "wheel", "touchstart"]) { window.addEventListener(l_event_name, noteActivity, { passive: true }); }
+    setInterval(checkAutoLock, G_AUTO_LOCK_CHECK_MS);
+}
+
+/**
+ * @returns {void}
+ */
+function initApp() {
+    try {
+        captureTemplate();                                                 // First, before anything changes the DOM
+    } catch (l_error) {
+        console.error("Capturing the page template failed", l_error);
+        g_template_parts = null;
+        showBanner("This page could not read its own HTML, so it cannot create new vaults. Unlocking still works.");
+    }
+
+    const l_loaded = loadDefaultSettings();
+    g_loaded_defaults = l_loaded.settings;
+    g_settings = { ...l_loaded.settings };
+    if (l_loaded.problems.length > 0) { showBanner(`Problems in the default settings (G_DEFAULT_SETTINGS in this file):\n${l_loaded.problems.join("\n")}`); }
+
+    const l_crypto_ok = window.isSecureContext && typeof crypto !== "undefined" && Boolean(crypto.subtle);
+    if (!l_crypto_ok) { showBanner("This browser does not provide WebCrypto here, so Hypervault cannot lock or unlock. Use a current Chrome, Edge, Firefox or Safari and open the file directly from disk (file://) or over https."); }
+
+    renderSettingsForm();
+    wireEvents();
+    getEl("app-version").textContent = `Version ${G_APP_VERSION}`;
+
+    if (g_embedded_base64) {
+        getEl("tabs").prepend(getEl("tab-unlock"));
+        getEl("tab-unlock").textContent = "Unlock vault";
+        getEl("intro-text").textContent = "This is a locked Hypervault. Enter the password to access the files locked inside.";
+        document.title = "Locked Hypervault";
+        useEmbeddedVault();
+        showTab("unlock");
+    } else {
+        renderUnlockSource();
+        showTab("lock");
+    }
+    renderStagedFiles();
+    renderUnlockedFiles();
+    if (!l_crypto_ok) {
+        g_is_busy = true;                                                  // Permanently disables the lock and unlock buttons
+        setBusy(true);
+        return;
+    }
+    if (g_embedded_base64) { getEl("unlock-password").focus(); }
+}
+
+initApp();
+</script>
+</body>
+</html>
